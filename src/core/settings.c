@@ -3,20 +3,12 @@
 #endif
 
 #include "settings.h"
+#include "fileio.h"
 #include "options.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-#ifdef _WIN32
-#include <direct.h>
-#include <io.h>
-#else
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <unistd.h>
-#endif
 
 #define LINE_CAP (BUILDER_VALUE_CAP * 2 + 64)
 
@@ -60,54 +52,6 @@ int settings_path(const char *override, const char *name, char *out, size_t n)
   len = snprintf(out, n, "%s%s/%s", base, suffix, name);
 #endif
   return (len < 0 || (size_t)len >= n) ? -1 : 0;
-}
-
-/* mkdir -p for the directory holding path. */
-static void make_parents(const char *path)
-{
-  char tmp[SETTINGS_PATH_CAP];
-  char *p;
-  snprintf(tmp, sizeof(tmp), "%s", path);
-  for(p = tmp + 1; *p; p++) {
-    if(*p == '/' || *p == '\\') {
-      char c = *p;
-      *p = '\0';
-#ifdef _WIN32
-      _mkdir(tmp);
-#else
-      mkdir(tmp, 0700);
-#endif
-      *p = c;
-    }
-  }
-}
-
-/* Opens path.tmp for writing, readable by the owner only. */
-static FILE *open_private(const char *tmp)
-{
-#ifdef _WIN32
-  return fopen(tmp, "wb");
-#else
-  int fd = open(tmp, O_WRONLY | O_CREAT | O_TRUNC, 0600);
-  return fd < 0 ? NULL : fdopen(fd, "wb");
-#endif
-}
-
-static int commit_file(FILE *f, const char *tmp, const char *path)
-{
-  int bad = ferror(f);
-  if(fclose(f) || bad) {
-    remove(tmp);
-    return -1;
-  }
-#ifdef _WIN32
-  remove(path);  /* rename does not replace on Windows */
-#endif
-  if(rename(tmp, path)) {
-    remove(tmp);
-    return -1;
-  }
-  return 0;
 }
 
 /* One value per line: newlines and backslashes are escaped. */
@@ -222,9 +166,9 @@ int settings_save(const settings_t *s, const char *path)
 {
   char tmp[SETTINGS_PATH_CAP + 8];
   FILE *f;
-  make_parents(path);
+  file_make_parents(path);
   snprintf(tmp, sizeof(tmp), "%s.tmp", path);
-  f = open_private(tmp);
+  f = file_open_private(tmp);
   if(!f)
     return -1;
   fputs("# curl UI settings. Safe to edit while the app is closed.\n", f);
@@ -241,7 +185,7 @@ int settings_save(const settings_t *s, const char *path)
   fprintf(f, "remember_request=%d\n", s->remember);
   fprintf(f, "window_width=%d\n", s->win_w);
   fprintf(f, "window_height=%d\n", s->win_h);
-  return commit_file(f, tmp, path);
+  return file_commit(f, tmp, path);
 }
 
 int request_save(const request *r, int method, const char *path)
@@ -249,9 +193,9 @@ int request_save(const request *r, int method, const char *path)
   char tmp[SETTINGS_PATH_CAP + 8];
   FILE *f;
   int i, j;
-  make_parents(path);
+  file_make_parents(path);
   snprintf(tmp, sizeof(tmp), "%s.tmp", path);
-  f = open_private(tmp);
+  f = file_open_private(tmp);
   if(!f)
     return -1;
   fprintf(f, "method=%d\n", method);
@@ -264,7 +208,7 @@ int request_save(const request *r, int method, const char *path)
     for(j = 0; j < s->nvalues; j++)
       write_escaped(f, "value", s->values[j]);
   }
-  return commit_file(f, tmp, path);
+  return file_commit(f, tmp, path);
 }
 
 int request_load(request *r, int *method, const char *path)

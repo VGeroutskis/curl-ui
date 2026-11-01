@@ -32,7 +32,8 @@ find_package(Threads REQUIRED)
 add_library(curlui_core STATIC
   src/core/options.c src/core/options_data.c src/core/builder.c
   src/core/procrun.c src/core/outbuf.c src/core/json_fmt.c
-  src/core/curlinfo.c src/core/docs.c src/core/settings.c)
+  src/core/curlinfo.c src/core/docs.c src/core/settings.c
+  src/core/json.c src/core/fileio.c)
 target_include_directories(curlui_core PUBLIC src/core)
 target_link_libraries(curlui_core PUBLIC Threads::Threads)
 if(NOT WIN32)
@@ -59,6 +60,9 @@ add_test(NAME core COMMAND test_core $<TARGET_FILE:echoargs> ${CURLUI_TEST_CURL}
 add_executable(test_args tests/test_args.c)
 target_link_libraries(test_args PRIVATE curlui_core)
 add_test(NAME all_args COMMAND test_args $<TARGET_FILE:echoargs> ${CURLUI_TEST_CURL})
+add_executable(test_api tests/test_api.c)
+target_link_libraries(test_api PRIVATE curlui_core)
+add_test(NAME api COMMAND test_api ${CMAKE_CURRENT_BINARY_DIR}/api-scratch)
 
 # ---- the application ----
 if(CURLUI_BUILD_GUI)
