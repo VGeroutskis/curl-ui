@@ -1,4 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
+# must precede project() to take effect
+set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Oldest macOS supported")
 project(curl-ui VERSION 0.1.0 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
@@ -10,9 +12,6 @@ endif()
 
 option(CURLUI_BUILD_GUI "Build the SDL2 application" ON)
 option(CURLUI_SANITIZE "Build with ASan and UBSan" OFF)
-if(APPLE)
-  set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "")
-endif()
 if(MSVC)
   # static CRT, so the installer needs no redistributable
   set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -31,12 +30,11 @@ find_package(Threads REQUIRED)
 # ---- core: no SDL, unit tested ----
 add_library(curlui_core STATIC
   src/core/options.c src/core/options_data.c src/core/builder.c
-  src/core/process.c src/core/outbuf.c src/core/json_fmt.c
+  src/core/procrun.c src/core/outbuf.c src/core/json_fmt.c
   src/core/curlinfo.c src/core/docs.c)
 target_include_directories(curlui_core PUBLIC src/core)
 target_link_libraries(curlui_core PUBLIC Threads::Threads)
 if(NOT WIN32)
-  # posix_spawn, nanosleep, and strdup-free C11 stay available
   target_compile_definitions(curlui_core PRIVATE _DEFAULT_SOURCE)
 endif()
 
@@ -161,7 +159,9 @@ if(CURLUI_BUILD_GUI)
     # curl is what this drives: required at run time, though --version detection copes
     set(CPACK_DEBIAN_PACKAGE_DEPENDS "curl")
     set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
-    set(CPACK_RPM_PACKAGE_REQUIRES "curl")
+    # declared, not left to the scanner: the soname works on every RPM distro,
+    # whichever package provides it (SDL2 or sdl2-compat)
+    set(CPACK_RPM_PACKAGE_REQUIRES "curl, libSDL2-2.0.so.0()(64bit)")
     set(CPACK_RPM_PACKAGE_LICENSE "curl AND MIT AND OFL-1.1")
     set(CPACK_RPM_PACKAGE_GROUP "Applications/Internet")
     set(CPACK_RPM_FILE_NAME RPM-DEFAULT)

@@ -11,7 +11,7 @@
 #include "docs.h"
 #include "options.h"
 #include "outbuf.h"
-#include "process.h"
+#include "procrun.h"
 
 typedef struct {
   struct nk_color bg, panel, card, border, border_strong;

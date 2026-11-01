@@ -3,7 +3,7 @@
 #define _DARWIN_C_SOURCE
 #endif
 
-#include "process.h"
+#include "procrun.h"
 #include "osthread.h"
 
 #include <stdio.h>

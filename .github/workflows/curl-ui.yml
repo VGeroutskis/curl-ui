@@ -1,0 +1,143 @@
+name: curl-ui
+
+on:
+  push:
+    branches: [curl-ui]
+    tags: ['v*']
+  pull_request:
+    branches: [curl-ui]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    # the oldest supported runner sets a low glibc floor for the packages
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake libsdl2-dev rpm dpkg-dev curl
+      - name: Configure
+        run: cmake -S ui -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build -j4
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+      - name: Screenshot smoke test
+        env:
+          SDL_VIDEODRIVER: dummy
+        run: ./build/curl-ui --add location --docs location --screenshot smoke.bmp && test -s smoke.bmp
+      - name: Sanitizers
+        run: |
+          cmake -S ui -B build-san -DCMAKE_BUILD_TYPE=Debug -DCURLUI_SANITIZE=ON -DCURLUI_BUILD_GUI=OFF
+          cmake --build build-san -j4
+          ctest --test-dir build-san --output-on-failure
+      - name: Package
+        run: cd build && cpack
+      - name: Inspect packages
+        run: |
+          dpkg-deb -I build/*.deb
+          dpkg-deb -f build/*.deb Depends | grep -q libsdl2
+          rpm -qpR build/*.rpm
+          rpm -qpR build/*.rpm | grep -q 'libSDL2-2.0.so.0'
+          objdump -T build/curl-ui | grep -oE 'GLIBC_[0-9.]+' | sort -Vu | tail -1
+      - name: Install the .deb and run it
+        env:
+          SDL_VIDEODRIVER: dummy
+        run: |
+          sudo apt-get install -y ./build/curl-ui_*.deb
+          curl-ui --docs location --screenshot installed.bmp
+          test -s installed.bmp
+      - uses: actions/upload-artifact@v4
+        with:
+          name: curl-ui-linux
+          path: |
+            build/*.deb
+            build/*.rpm
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install NSIS
+        run: choco install nsis -y --no-progress
+      - name: Configure
+        run: cmake -S ui -B build -A x64
+      - name: Build
+        run: cmake --build build --config Release -j4
+      - name: Test
+        # C:\Windows\System32\curl.exe does the end-to-end transfer
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Screenshot smoke test
+        env:
+          SDL_VIDEODRIVER: dummy
+        run: |
+          $p = Start-Process -Wait -PassThru -FilePath build\Release\curl-ui.exe -ArgumentList '--add location --docs location --screenshot smoke.bmp'
+          if ($p.ExitCode -ne 0 -or -not (Test-Path smoke.bmp)) { exit 1 }
+      - name: Package
+        working-directory: build
+        run: cpack -C Release
+      - name: Install, run and uninstall the installer
+        env:
+          SDL_VIDEODRIVER: dummy
+        run: |
+          $installer = (Get-ChildItem build\curl-ui-*.exe).FullName
+          $p = Start-Process -Wait -PassThru -FilePath $installer -ArgumentList '/S'
+          if ($p.ExitCode -ne 0) { exit 1 }
+          $dir = "$env:ProgramFiles\curl UI"
+          $p = Start-Process -Wait -PassThru -FilePath "$dir\curl-ui.exe" -ArgumentList "--docs location --screenshot $env:TEMP\installed.bmp"
+          if ($p.ExitCode -ne 0 -or -not (Test-Path "$env:TEMP\installed.bmp")) { exit 1 }
+          $p = Start-Process -Wait -PassThru -FilePath "$dir\Uninstall.exe" -ArgumentList '/S'
+          if ($p.ExitCode -ne 0) { exit 1 }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: curl-ui-windows
+          path: |
+            build/curl-ui-*.exe
+            build/curl-ui-*.zip
+          if-no-files-found: error
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S ui -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+      - name: Build
+        run: cmake --build build -j4
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+      - name: Check the binary is universal
+        run: lipo -info "build/curl UI.app/Contents/MacOS/curl UI" | grep -E 'x86_64.*arm64|arm64.*x86_64'
+      - name: Screenshot smoke test
+        env:
+          SDL_VIDEODRIVER: dummy
+        run: |
+          "build/curl UI.app/Contents/MacOS/curl UI" --add location --docs location --screenshot "$PWD/smoke.bmp"
+          test -s smoke.bmp
+      - name: Package
+        run: cd build && cpack
+      - uses: actions/upload-artifact@v4
+        with:
+          name: curl-ui-macos
+          path: build/*.dmg
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [linux, windows, macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "curl UI $TAG" --generate-notes dist/*/*

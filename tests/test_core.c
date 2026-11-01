@@ -9,7 +9,7 @@
 #include "options.h"
 #include "osthread.h"
 #include "outbuf.h"
-#include "process.h"
+#include "procrun.h"
 
 #include <stdio.h>
 #include <stdlib.h>

@@ -4,7 +4,7 @@
 
 #include "curlinfo.h"
 #include "osthread.h"
-#include "process.h"
+#include "procrun.h"
 
 #include <stdio.h>
 #include <stdlib.h>

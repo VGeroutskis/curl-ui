@@ -15,7 +15,6 @@
 
 #ifdef _WIN32
 #include <direct.h>
-#include <shellapi.h>
 #define chdir _chdir
 #define getcwd _getcwd
 #else
@@ -298,7 +297,6 @@ static const char usage[] =
   "  --screenshot F.bmp  after the above, save a screenshot and exit\n"
   "  --stats             print UI time per frame on exit\n";
 
-#undef main
 int main(int argc, char **argv)
 {
   app_t *a = &g_app;
