@@ -104,6 +104,19 @@ Generated files are committed, so building needs no Python:
 | `src/ui/fonts_data.{c,h}` | `tools/build_fonts.py` | `pip install fonttools brotli` |
 | `packaging/curl-ui.{png,ico,icns}` | `tools/build_icons.py` | `pip install pillow` |
 
+## Testing
+
+`ctest` covers the core and runs every option through the builder and process
+runner, then through a real curl that parses it and stops before any transfer.
+
+`tests/live/live_options.py --ui build/curl-ui` goes further: each of the 278
+options is added to the real app, run, and judged by what came back, from public
+test services (httpbin.org, badssl.com, test.rebex.net and others) and from local
+servers for what has no public service (proxies, SOCKS, mail, TFTP, writable FTP).
+It needs network, `openssl`, `ssh-keygen` and `pip install pyftpdlib`, so it is not
+part of ctest. It reports each option as `effect` (the result proves it worked),
+`ran` (it ran, but a client cannot see its effect) or `n/a` (this curl lacks it).
+
 ## Command line
 
 These double as the test hooks. With `--screenshot` the app runs the script,
@@ -113,7 +126,9 @@ saves the image and exits; `SDL_VIDEODRIVER=dummy` makes that work headless.
 |---|---|
 | `--url URL`, `--method NAME` | fill the request bar |
 | `--add NAME[=VALUE]` | add an option, repeatable |
+| `--neg NAME` | add an option in its `--no-` form |
 | `--run` | run at startup |
+| `--dump FILE` | with `--screenshot`: save the exit code, output and log |
 | `--light` | light theme |
 | `--docs NAME` | open the docs of an option |
 | `--search TEXT` | fill the library search |

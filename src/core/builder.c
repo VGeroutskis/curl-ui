@@ -242,7 +242,7 @@ const char **arg_list_argv(const arg_list *l, const char *const *extra)
 int request_lacks_url(const request *r)
 {
   static const char *const enough[] = {
-    "url", "config", "help", "version", "manual", NULL
+    "url", "config", "help", "version", "manual", "engine", "dump-ca-embed", NULL
   };
   int i;
   if(r->url[0] || (r->config_file && r->config_file[0]))

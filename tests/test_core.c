@@ -218,6 +218,13 @@ static void test_url_checks(void)
   request_add(&r, options_find("version"));
   CHECK(!request_lacks_url(&r));
   request_clear_options(&r);
+  /* these run without a URL too */
+  request_add(&r, options_find("dump-ca-embed"));
+  CHECK(!request_lacks_url(&r));
+  request_clear_options(&r);
+  snprintf(request_add(&r, options_find("engine"))->values[0], BUILDER_VALUE_CAP, "list");
+  CHECK(!request_lacks_url(&r));
+  request_clear_options(&r);
   request_add(&r, options_find("help"));  /* its value is optional */
   CHECK(!request_lacks_url(&r));
   request_clear_options(&r);

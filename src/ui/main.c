@@ -306,6 +306,25 @@ static void run_script(app_t *a, const script_op *ops, int n)
   }
 }
 
+/* What the run produced, for tests that look at more than pixels. */
+static int write_dump(app_t *a, const char *path)
+{
+  FILE *f = fopen(path, "wb");
+  char *cmd = builder_preview(&a->args);
+  char *out = outbuf_join(a->out, NULL);
+  char *log = outbuf_join(a->log, NULL);
+  if(f) {
+    fprintf(f, "exit=%d\nhad_result=%d\nhttp=%d\nstats=%d\nsize=%lld\nurl_missing=%d\n", a->exit_code, a->has_result,
+            a->http_status, a->has_stats, a->curl_size, a->url_missing);
+    fprintf(f, "command=%s\n---stdout---\n%s\n---log---\n%s\n", cmd ? cmd : "", out ? out : "", log ? log : "");
+    fclose(f);
+  }
+  free(cmd);
+  free(out);
+  free(log);
+  return f ? 0 : -1;
+}
+
 static int save_screenshot(const char *path)
 {
   int w, h, rc;
@@ -345,7 +364,9 @@ static const char usage[] =
   "  --url URL           request URL\n"
   "  --method NAME       GET, POST, PUT, ...\n"
   "  --add NAME[=VALUE]  add an option, repeatable\n"
+  "  --neg NAME          add an option in its --no- form\n"
   "  --run               run the request at startup\n"
+  "  --dump FILE         with --screenshot: save exit code, output and log\n"
   "  --light             light theme\n"
   "  --docs NAME         open the docs of an option\n"
   "  --search TEXT       type into the library search\n"
@@ -365,7 +386,7 @@ int main(int argc, char **argv)
   script_op ops[MAX_SCRIPT];
   int win_size_given = 0;
   int nops = 0, want_run = 0, want_log = 0, light = 0, stats = 0, win_w = 1360, win_h = 840, i;
-  const char *settings_dir = NULL;
+  const char *settings_dir = NULL, *dump = NULL;
   char request_path[SETTINGS_PATH_CAP] = "";
   int have_cli_request = 0;
   settings_t saved;
@@ -417,6 +438,20 @@ int main(int argc, char **argv)
       }
       app_add_option(a, name, eq ? eq + 1 : NULL);
     }
+    else if(!strcmp(arg, "--neg")) {
+      const char *name = NEXT();
+      int opt = options_find(name);
+      sel_option *sel;
+      if(opt < 0 || !g_options[opt].neg[0]) {
+        fprintf(stderr, "no --no- form: %s\n", name);
+        return 2;
+      }
+      sel = request_add(&a->req, opt);
+      if(sel)
+        sel->negated = 1;
+    }
+    else if(!strcmp(arg, "--dump"))
+      dump = NEXT();
     else if(!strcmp(arg, "--url"))
       snprintf(a->req.url, sizeof(a->req.url), "%s", NEXT());
     else if(!strcmp(arg, "--method"))
@@ -576,6 +611,8 @@ int main(int argc, char **argv)
   if(screenshot) {
     int rc;
     input_frame(a, NULL, NULL);
+    if(dump && write_dump(a, dump))
+      fprintf(stderr, "cannot write %s\n", dump);
     if(a->settings_path[0]) {
       settings_save(&a->set, a->settings_path);
       if(a->set.remember)
