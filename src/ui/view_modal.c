@@ -47,7 +47,7 @@ void modal_close(app_t *a)
 void modal_act(app_t *a, modal_action act)
 {
   if(act == MODAL_SAVE) {
-    var_env *e = &a->vars.e[a->vars.active];
+    var_env *e = app_tab_env(a, CUR(a));
     int i;
     for(i = 0; i < a->modal_names.n; i++)
       var_set(e, a->modal_names.s[i], a->modal_values[i], a->modal_secret[i]);
@@ -58,8 +58,7 @@ void modal_act(app_t *a, modal_action act)
   if(act == MODAL_SAVE)
     app_run(a);
   else if(act == MODAL_OPEN_VARS) {
-    a->show_vars = 1;
-    a->show_settings = 0;
+    app_open_vars(a, tab_coll(CUR(a)));
   }
 }
 
@@ -82,7 +81,14 @@ void view_modal(app_t *a)
   ui_stroke(a, nk_rect(x, y, w, h), 9, p->border_strong);
   snprintf(tmp, sizeof(tmp), n == 1 ? "This request needs a variable" : "This request needs %d variables", n);
   ui_text_fit(a, a->f.title, x + 18, y + 12, 26, w - 36, tmp, p->text);
-  snprintf(tmp, sizeof(tmp), "Saved in the environment %s", a->vars.e[a->vars.active].name);
+  {
+    const coll_node *top = NULL;
+    int c;
+    for(c = 0; c < a->ncolls; c++)
+      if(!strcmp(a->colls[c]->id, tab_coll(CUR(a))))
+        top = a->colls[c]->root;
+    snprintf(tmp, sizeof(tmp), "Saved in %.80s, environment %.40s", top ? top->name : "My requests", app_tab_env(a, CUR(a))->name);
+  }
   ui_text_fit(a, a->f.small, x + 18, y + 38, 18, w - 36, tmp, p->dim);
   {
     float fy = y + 62, name_w = 150, sec_w = 74;

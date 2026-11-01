@@ -94,6 +94,7 @@ typedef struct {
   arg_list args;        /* what is on screen: secrets hidden, tokens parallel to the others */
   int dirty;            /* differs from what is saved */
   char node_id[17];     /* the saved request it is, or "" */
+  char coll_id[17];     /* the collection it takes variables from; "" for My requests */
   char title[128];
   char *saved_json;     /* what was last saved, to compare with */
   unsigned long dirty_sig;
@@ -152,7 +153,7 @@ typedef struct {
 
 #define CUR(a) ((a)->tabs[(a)->cur])
 
-typedef enum { SIDE_COLLECTIONS, SIDE_HISTORY, SIDE_OPTIONS, SIDE_COUNT } side_kind;
+typedef enum { SIDE_COLLECTIONS, SIDE_HISTORY, SIDE_COUNT } side_kind;
 typedef enum {
   DLG_NONE, DLG_NEW_COLL, DLG_NEW_FOLDER, DLG_NEW_REQUEST, DLG_RENAME, DLG_SAVE_AS, DLG_MOVE, DLG_DELETE, DLG_CLOSE_TAB,
   DLG_QUIT, DLG_IMPORT
@@ -231,8 +232,9 @@ typedef struct {
   float hist_scroll;
   int hist_clear_armed;
 
-  /* variables */
-  var_store vars;
+  /* variables: each collection has its own */
+  var_book book;
+  char vars_for[17];    /* the collection whose table is open */
   char vars_path[SETTINGS_PATH_CAP];
   unsigned long vars_hash;
   int show_vars;
@@ -371,6 +373,12 @@ void env_menu_draw(app_t *a);
 void app_notice(app_t *a, const char *text);
 
 /* store.c, view_collections.c */
+const char *tab_coll(const tab_t *t);
+var_store *app_tab_store(app_t *a, const tab_t *t);
+var_env *app_tab_env(app_t *a, const tab_t *t);
+void app_tabs_refresh_coll(app_t *a);
+void app_ensure_default_collection(app_t *a);
+void app_open_vars(app_t *a, const char *coll_id);
 void tab_mark_clean(tab_t *t);
 void app_tabs_update_dirty(app_t *a);
 void app_open_node(app_t *a, coll_node *n);

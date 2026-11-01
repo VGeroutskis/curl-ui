@@ -14,7 +14,7 @@ not included: packages depend on it, and the app uses the one on your system.
 
 1. [Install it](#install), and open the app.
 2. Type a URL and press Run. The Response tab shows the result.
-3. Fill in Params, Headers, Body or Auth, or add any curl option from Options on the left.
+3. Fill in Params, Headers, Body or Auth, or add any curl option under Curl.
 4. Write `{{name}}` wherever a value changes between environments. The first run asks for it.
 5. Press Ctrl/Cmd+S to keep the request in a collection.
 
@@ -22,8 +22,9 @@ not included: packages depend on it, and the app uses the one on your system.
 
 - **Your real curl, nothing simulated.** The app starts the `curl` on your system
   with an argument array and no shell, so a result here is a result from curl.
-- **An API client and all of curl.** Tabs, collections, environments, history and
-  forms for params, headers, body and auth, next to every one of curl's 278 options.
+- **An API client and all of curl.** Tabs, collections with their own variables and
+  environments, history and forms for params, headers, body and auth, next to every one
+  of curl's 278 options.
 - **Every option, documented in place.** curl's own documentation appears as you
   hover over an option, a row or a flag in the command.
 - **Only what can work together.** After each choice the option list narrows to what
@@ -47,7 +48,7 @@ not included: packages depend on it, and the app uses the one on your system.
 ## Use cases
 
 - **Work with an API across environments.** Write `{{base}}/users` once, keep the
-  values in Dev and Prod, and switch from the header. Save the request in a collection.
+  values in the collection's Dev and Prod, and switch between them in its Variables.
 - **Debug an API call.** Fill in Auth and Body, and run. The Response tab formats the
   JSON, and the Log tab shows what was sent and received.
 - **Take over a command you were given.** Press Import, paste the curl command, and it
@@ -93,17 +94,17 @@ it is not on `PATH`, click the version pill in the header and enter its path und
 
 ## Using it
 
-- **Left:** Collections, History and Options. Options lists every curl option: search
-  names and descriptions, filter with the chips, and click a row to add it. Once an
-  option is chosen, the list shows only what can still combine with everything chosen
-  so far: what conflicts, and what belongs to another protocol (`--ftp-pasv` rules out
-  `--user-agent`), steps aside, with a count and a Show all link to see it anyway.
-  Removing an option brings back what it ruled out. Deprecated options stay out of the
-  list unless you search or use the Deprecated filter under More, which is why it
-  starts at 269 of 278.
+- **Left:** Collections and History.
 - **Centre:** method and URL on top, then Params, Headers, Body, Auth and Curl, the exact
   command, and the output with Response and Log tabs. Press Enter in the URL, Ctrl/Cmd+Enter,
-  or Run. Recipes are starting points.
+  or Run.
+- **Curl:** every curl option. Search names and descriptions, filter with the chips, and
+  click a row to add it as a card beside the list. Once an option is chosen, the list shows
+  only what can still combine with everything chosen so far: what conflicts, and what belongs
+  to another protocol (`--ftp-pasv` rules out `--user-agent`), steps aside, with a count and a
+  Show all link to see it anyway. Removing an option brings back what it ruled out. Deprecated
+  options stay out of the list unless you search or use the Deprecated filter under More, which
+  is why it starts at 269 of 278. Recipes are starting points.
 - **Right:** hover a library row, a card, a form row or a flag in the command and that
   option's full documentation appears, and stays while you move over to read. Every
   `--option` in it is a link.
@@ -130,10 +131,12 @@ as `--data` together with `--form`, the form says **Set by options** and leaves 
 
 ### Variables
 
-Write `{{name}}` in the URL or any option. Values come only from the table in the
-**Variables** tab, opened from the environment menu in the header, with one table per
-environment. The operating system's environment is not read, and variables are not passed
-to it or to curl's environment.
+Write `{{name}}` in the URL or any option. Each collection has its own table of variables
+and its own environments, such as Dev and Prod: open them with **Variables...** in the
+collection's menu, and the tree shows the environment in use when there is more than one. A
+request takes its values only from its collection. One that is not saved uses **My requests**,
+and saving it elsewhere brings along the variables it uses. The operating system's environment
+is not read, and variables are not passed to it or to curl's environment.
 
 Running with a variable that has no value sends nothing and asks for it, then saves it in
 the table and carries on. curl receives the real value, so the final command does not
@@ -226,7 +229,7 @@ your profile folder on Windows:
 
 | File | Holds |
 |---|---|
-| `variables.json` | environments and the values of variables, secrets included, as plain text |
+| `variables.json` | each collection's environments and values, secrets included, as plain text. Never in the collection's own file |
 | `collections/*.json` | saved requests, one file per collection, with `{{name}}` |
 | `session.json` | open tabs, unless Reopen tabs is off |
 | `history.jsonl` | the last 500 runs as written, without responses |
@@ -315,13 +318,13 @@ saves the image and exits; `SDL_VIDEODRIVER=dummy` makes that work headless.
 | `--paste-file PATH` | scripted paste of a file into the focused field |
 | `--tab`, `--select-tab N`, `--close-tab N` | new tab, and scripted change of tab; `--url`, `--add` and `--run` apply to the latest |
 | `--no-wait` | do not wait for runs to end before the screenshot |
-| `--var NAME=VALUE`, `--secret NAME=VALUE`, `--env NAME` | fill the table of variables |
+| `--var NAME=VALUE`, `--secret NAME=VALUE`, `--env NAME` | fill the table of the tab's collection |
 | `--open-vars`, `--reveal` | open the Variables tab; show secrets in the command |
 | `--modal-value NAME=VALUE`, `--modal-action save\|cancel\|open` | scripted answer to the prompt for missing variables |
 | `--form params\|headers\|body\|auth\|curl` | show a form |
 | `--set-param K=V`, `--param-off K`, `--set-header "N: V"` | fill a table |
 | `--set-body KIND TEXT`, `--set-auth KIND A B` | fill a form, as kinds `raw`, `json`, `file`, `urlencoded`, `form-data`, `form-data-file`, and `basic`, `digest`, `bearer`, `apikey-header`, `apikey-query` |
-| `--sidebar collections\|history\|options` | show a left view |
+| `--sidebar collections\|history` | show a left view |
 | `--save-as COLLECTION/FOLDER/NAME`, `--open-node ID`, `--open-history N` | save and open requests |
 | `--import-cmd TEXT` | import a curl command |
 | `--set-body-off K=V` | add a body row switched off |

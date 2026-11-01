@@ -80,7 +80,7 @@ def main():
         check("X-Token: ********" in text.split("---stdout---")[0], "the command on screen hides the secret")
         with open(store, encoding="utf-8") as f:
             data = json.load(f)
-        rows = {v["name"]: v for v in data["environments"][0]["variables"]}
+        rows = {v["name"]: v for v in data["collections"]["0000000000000000"]["environments"][0]["variables"]}
         check(rows["api_token"]["value"] == "abc123" and rows["api_token"]["secret"] is True, "the value is in the table")
         if os.name != "nt":
             check(stat.S_IMODE(os.stat(store).st_mode) == 0o600, "the file is private")

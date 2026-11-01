@@ -454,58 +454,110 @@ static void test_vars_apply(void)
 static void test_vars_store(void)
 {
   char path[1024], err[2048], moved[1100];
-  var_store a, b;
+  var_book ba, bb;
+  var_store *sa, *sb;
   size_t len;
   char *got;
   int i;
   snprintf(path, sizeof(path), "%s/variables.json", g_dir);
   remove(path);
-  vars_init(&a);
-  CHECK(vars_load(&a, path, err, sizeof(err)) == 0);  /* nothing there yet is fine */
-  CHECK(a.n == 1);
-  var_set(&a.e[0], "one", "1", 0);
-  var_set(&a.e[0], "tok", "\xCE\xBA \"q\"", 1);
-  var_set(&a.e[0], "tok", "changed", 1);
-  CHECK(a.e[0].n == 2);
-  i = env_add(&a, "Prod");
-  var_set(&a.e[i], "one", "p", 0);
-  a.active = i;
-  CHECK(env_add(&a, "Prod") == -1);
-  CHECK(env_add(&a, "") == -1);
-  CHECK(vars_save(&a, path) == 0);
-  vars_init(&b);
-  CHECK(vars_load(&b, path, err, sizeof(err)) == 0);
-  CHECK(b.n == 2 && b.active == 1);
-  CHECK_STR(b.e[1].name, "Prod");
-  CHECK_STR(var_find(&b.e[0], "tok")->value, "changed");
-  CHECK(var_find(&b.e[0], "tok")->secret == 1);
-  CHECK(var_find(&b.e[0], "one")->secret == 0);
-  vars_free(&b);
+  book_init(&ba);
+  CHECK(book_load(&ba, path, err, sizeof(err)) == 0);  /* nothing there yet is fine */
+  CHECK(ba.n == 0);
+  sa = book_get(&ba, "aaaaaaaaaaaaaaaa");
+  CHECK(sa->n == 1);
+  CHECK_STR(sa->e[0].name, "Default");
+  var_set(&sa->e[0], "one", "1", 0);
+  var_set(&sa->e[0], "tok", "\xCE\xBA \"q\"", 1);
+  var_set(&sa->e[0], "tok", "changed", 1);
+  CHECK(sa->e[0].n == 2);
+  i = env_add(sa, "Prod");
+  var_set(&sa->e[i], "one", "p", 0);
+  sa->active = i;
+  CHECK(env_add(sa, "Prod") == -1);
+  CHECK(env_add(sa, "") == -1);
+  /* a second collection has its own table: the same name, its own value */
+  sb = book_get(&ba, "bbbbbbbbbbbbbbbb");
+  var_set(&sb->e[0], "one", "other", 0);
+  CHECK(book_get(&ba, "aaaaaaaaaaaaaaaa") == sa);  /* stays where it is */
+  CHECK_STR(var_find(&sb->e[0], "one")->value, "other");
+  CHECK(book_save(&ba, path) == 0);
+  book_init(&bb);
+  CHECK(book_load(&bb, path, err, sizeof(err)) == 0);
+  CHECK(bb.n == 2);
+  sa = book_get(&bb, "aaaaaaaaaaaaaaaa");
+  CHECK(sa->n == 2 && sa->active == 1);
+  CHECK_STR(sa->e[1].name, "Prod");
+  CHECK_STR(var_find(&sa->e[0], "tok")->value, "changed");
+  CHECK(var_find(&sa->e[0], "tok")->secret == 1);
+  CHECK(var_find(&sa->e[0], "one")->secret == 0);
+  CHECK_STR(var_find(&book_get(&bb, "bbbbbbbbbbbbbbbb")->e[0], "one")->value, "other");
+  /* removing a collection's table */
+  book_remove(&bb, "bbbbbbbbbbbbbbbb");
+  CHECK(bb.n == 1);
+  book_free(&bb);
   /* copy, rename and removal; the last one stays */
-  i = env_copy(&a, 0, "Copy");
-  CHECK(i == 2 && a.e[2].n == 2);
-  CHECK(env_rename(&a, 2, "Prod") == -1);
-  CHECK(env_rename(&a, 2, "Stage") == 0);
-  CHECK(env_remove(&a, 2) == 0);
-  CHECK(env_remove(&a, 1) == 0);
-  CHECK(a.n == 1 && a.active == 0);
-  CHECK(env_remove(&a, 0) == -1);
-  vars_free(&a);
-  /* a damaged file is kept aside, and the store starts over */
+  sa = book_get(&ba, "aaaaaaaaaaaaaaaa");
+  i = env_copy(sa, 0, "Copy");
+  CHECK(i == 2 && sa->e[2].n == 2);
+  CHECK(env_rename(sa, 2, "Prod") == -1);
+  CHECK(env_rename(sa, 2, "Stage") == 0);
+  CHECK(env_remove(sa, 2) == 0);
+  CHECK(env_remove(sa, 1) == 0);
+  CHECK(sa->n == 1 && sa->active == 0);
+  CHECK(env_remove(sa, 0) == -1);
+  book_free(&ba);
+  /* a file from before collections had tables goes to My requests */
+  {
+    static const char old[] = "{\"format\":\"curl-ui-variables\",\"version\":1,\"active\":\"P\",\"environments\":["
+      "{\"name\":\"D\",\"variables\":[]},{\"name\":\"P\",\"variables\":[{\"name\":\"t\",\"value\":\"v\",\"secret\":true}]}]}";
+    CHECK(file_write_private(path, old, sizeof(old) - 1) == 0);
+    book_init(&bb);
+    CHECK(book_load(&bb, path, err, sizeof(err)) == 0);
+    sa = book_get(&bb, VARS_DEFAULT_ID);
+    CHECK(sa->n == 2 && sa->active == 1);
+    CHECK(var_find(&sa->e[1], "t")->secret == 1);
+    book_free(&bb);
+  }
+  /* a damaged file is kept aside, and the book starts over */
   CHECK(file_write_private(path, "{ not json", 10) == 0);
-  vars_init(&b);
+  book_init(&bb);
   err[0] = '\0';
-  CHECK(vars_load(&b, path, err, sizeof(err)) == -1);
+  CHECK(book_load(&bb, path, err, sizeof(err)) == -1);
   CHECK(strstr(err, ".bad-") != NULL);
-  CHECK(b.n == 1);
-  CHECK_STR(b.e[0].name, "Default");
+  CHECK(bb.n == 0);
   CHECK(file_read_all(path, &len, 64) == NULL);
   snprintf(moved, sizeof(moved), "%s.bad-1", path);
   got = file_read_all(moved, &len, 64);
   CHECK(got != NULL);
   free(got);
   remove(moved);
-  vars_free(&b);
+  book_free(&bb);
+}
+
+static void test_vars_copy_used(void)
+{
+  var_store st;
+  var_env *from, *to;
+  arg_list l = one_arg_request("{{base}}/x", "A: {{tok}} {{unset}} {{kept}}");
+  int i;
+  vars_init(&st);
+  i = env_add(&st, "To");
+  from = &st.e[0];
+  to = &st.e[i];
+  var_set(from, "base", "b", 0);
+  var_set(from, "tok", "t", 1);
+  var_set(from, "unused", "u", 0);
+  var_set(from, "kept", "from", 0);
+  var_set(to, "kept", "mine", 0);
+  CHECK(vars_copy_used(from, to, &l) == 2);
+  CHECK_STR(var_find(to, "base")->value, "b");
+  CHECK(var_find(to, "tok")->secret == 1);
+  CHECK(var_find(to, "unused") == NULL);
+  CHECK(var_find(to, "unset") == NULL);
+  CHECK_STR(var_find(to, "kept")->value, "mine");  /* what is there stays */
+  arg_list_free(&l);
+  vars_free(&st);
 }
 
 static char *mask_text(const mask_set *m, const char *text)
@@ -1274,6 +1326,7 @@ int main(int argc, char **argv)
   test_vars_missing();
   test_vars_apply();
   test_vars_store();
+  test_vars_copy_used();
   test_base64();
   test_mask();
   test_query();

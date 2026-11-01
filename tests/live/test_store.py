@@ -15,6 +15,10 @@ import tempfile
 SECRET = "UNIQUE-secret-value-7f3a"
 
 
+def login_id_for(data):
+    return data["items"][0]["items"][0]["id"]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--ui", required=True)
@@ -50,6 +54,26 @@ def main():
         login = data["items"][0]["items"][0]
         check(login["name"] == "Login" and login["request"]["url"] == "{{base}}/login", "the request keeps {{base}}")
         check(login["request"]["method"] == "POST", "the method")
+
+        # variables belong to the collection: saving brought along what the request uses
+        with open(os.path.join(settings, "variables.json"), encoding="utf-8") as f:
+            book = json.load(f)["collections"]
+        mine = {v["name"]: v for v in book[data["id"]]["environments"][0]["variables"]}
+        check(mine.get("base", {}).get("value") == "http://127.0.0.1:9", "saving into a collection brings its variables")
+        check(mine.get("tok", {}).get("secret") is True, "a secret stays a secret")
+
+        # another collection has its own table: the same name asks again
+        text = app("--url", "{{only_here}}", "--save-as", "Other/R", "--run")
+        node_other = None
+        for path in glob.glob(os.path.join(settings, "collections", "*.json")):
+            with open(path, encoding="utf-8") as f:
+                c = json.load(f)
+            if c["name"] == "Other":
+                node_other = c["items"][0]["id"]
+        text = app("--open-node", node_other, "--var", "base=http://other", "--open-vars")
+        check("vars_for=" in text and data["id"] not in text.split("vars_for=")[1].split("\n")[0], "the table opened is the request's collection's")
+        text = app("--open-node", login_id_for(data), "--url", "{{base}}/x", "--reveal")
+        check("http://127.0.0.1:9/x" in text.split("command=")[1].split("\n")[0], "each collection keeps its own value")
 
         # every file holding anything but the table must be free of the value
         app("--url", "http://127.0.0.1:9/{{tok}}", "--run", "--tab", "--add", "user=me:{{tok}}")

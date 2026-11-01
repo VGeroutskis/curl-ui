@@ -149,7 +149,7 @@ void app_init(app_t *a)
 {
   memset(a, 0, sizeof(*a));
   settings_defaults(&a->set);
-  vars_init(&a->vars);
+  book_init(&a->book);
   a->env_edit_for = -1;
   tab_new(a);
   a->results = malloc(sizeof(int) * (size_t)g_option_count);
@@ -158,7 +158,7 @@ void app_init(app_t *a)
   a->hover_cand = -1;
   a->filter_last = -1;
   a->doc_arena = malloc(8192);
-  a->sidebar = SIDE_OPTIONS;
+  a->sidebar = SIDE_COLLECTIONS;
 }
 
 void app_free(app_t *a)
@@ -169,7 +169,7 @@ void app_free(app_t *a)
   a->ntabs = 0;
   modal_close(a);
   app_store_free(a);
-  vars_free(&a->vars);
+  book_free(&a->book);
   free(a->dops);
   free(a->doc_arena);
   docs_free(&a->doc);
@@ -198,7 +198,7 @@ void app_rebuild_args(app_t *a)
   snprintf(CUR(a)->req.method, sizeof(CUR(a)->req.method), "%s", method_names[CUR(a)->method]);
   if(builder_build(&CUR(a)->req, a->set.program[0] ? a->set.program : "curl", &CUR(a)->args_tmpl))
     return;
-  vars_apply(&a->vars.e[a->vars.active], &CUR(a)->args_tmpl, &CUR(a)->args_real, &CUR(a)->args);
+  vars_apply(app_tab_env(a, CUR(a)), &CUR(a)->args_tmpl, &CUR(a)->args_real, &CUR(a)->args);
 }
 
 void app_notice(app_t *a, const char *text)
@@ -333,7 +333,7 @@ void app_run(app_t *a)
   /* nothing leaves until every variable has a value */
   {
     str_list missing;
-    if(vars_missing(&a->vars.e[a->vars.active], &CUR(a)->args_tmpl, &missing))
+    if(vars_missing(app_tab_env(a, CUR(a)), &CUR(a)->args_tmpl, &missing))
       return;
     if(missing.n) {
       modal_open_missing(a, &missing);
@@ -343,7 +343,7 @@ void app_run(app_t *a)
   }
   app_history_begin(a, CUR(a));
   mask_free(CUR(a)->mask);
-  CUR(a)->mask = mask_build(&a->vars.e[a->vars.active], &CUR(a)->args_real);
+  CUR(a)->mask = mask_build(app_tab_env(a, CUR(a)), &CUR(a)->args_real);
 
   have_v = request_find(&CUR(a)->req, options_find("verbose")) >= 0 ||
            request_find(&CUR(a)->req, options_find("trace")) >= 0 ||

@@ -423,16 +423,83 @@ oom:
   return -1;
 }
 
+int vars_copy_used(const var_env *from, var_env *to, const arg_list *tmpl)
+{
+  int i, copied = 0;
+  for(i = 1; i < tmpl->count; i++) {
+    const char *t = tmpl->tok[i].text, *name;
+    size_t n;
+    if(tmpl->tok[i].kind == TOK_FLAG)
+      continue;
+    while(next_var(t, &name, &n)) {
+      const var_t *v = var_find_n(from, name, n);
+      if(v && !var_find_n(to, name, n) && var_set(to, v->name, v->value, v->secret))
+        copied++;
+      t = name + n + 2;
+    }
+  }
+  return copied;
+}
+
+/* ---- the book ---- */
+
+void book_init(var_book *b)
+{
+  memset(b, 0, sizeof(*b));
+}
+
+void book_free(var_book *b)
+{
+  int i;
+  for(i = 0; i < b->n; i++) {
+    vars_free(&b->e[i]->st);
+    free(b->e[i]);
+  }
+  free(b->e);
+  memset(b, 0, sizeof(*b));
+}
+
+var_store *book_get(var_book *b, const char *id)
+{
+  var_book_entry *e, **g;
+  int i;
+  for(i = 0; i < b->n; i++)
+    if(!strcmp(b->e[i]->id, id))
+      return &b->e[i]->st;
+  e = calloc(1, sizeof(*e));
+  g = realloc(b->e, sizeof(*g) * (size_t)(b->n + 1));
+  if(g)
+    b->e = g;
+  if(!e || !g) {
+    free(e);
+    return NULL;
+  }
+  snprintf(e->id, sizeof(e->id), "%s", id);
+  vars_init(&e->st);
+  b->e[b->n++] = e;
+  return &e->st;
+}
+
+void book_remove(var_book *b, const char *id)
+{
+  int i;
+  for(i = 0; i < b->n; i++) {
+    if(!strcmp(b->e[i]->id, id)) {
+      vars_free(&b->e[i]->st);
+      free(b->e[i]);
+      memmove(&b->e[i], &b->e[i + 1], sizeof(b->e[0]) * (size_t)(b->n - i - 1));
+      b->n--;
+      return;
+    }
+  }
+}
+
 /* ---- file ---- */
 
-int vars_save(const var_store *s, const char *path)
+static jv *store_to_jv(const var_store *s)
 {
   jv *root = jv_new(JV_OBJ), *envs = jv_new(JV_ARR);
-  char *text;
-  size_t n = 0;
-  int i, k, rc;
-  jv_set(root, "format", jv_new_str("curl-ui-variables"));
-  jv_set(root, "version", jv_new_num(1));
+  int i, k;
   jv_set(root, "active", jv_new_str(s->e[s->active].name));
   for(i = 0; i < s->n; i++) {
     jv *env = jv_new(JV_OBJ), *vars = jv_new(JV_ARR);
@@ -452,42 +519,36 @@ int vars_save(const var_store *s, const char *path)
     jv_push(envs, env);
   }
   jv_set(root, "environments", envs);
+  return root;
+}
+
+int book_save(const var_book *b, const char *path)
+{
+  jv *root = jv_new(JV_OBJ), *colls = jv_new(JV_OBJ);
+  char *text;
+  size_t n = 0;
+  int i, rc;
+  jv_set(root, "format", jv_new_str("curl-ui-variables"));
+  jv_set(root, "version", jv_new_num(2));
+  for(i = 0; i < b->n; i++)
+    jv_set(colls, b->e[i]->id, store_to_jv(&b->e[i]->st));
+  jv_set(root, "collections", colls);
   text = jv_write(root, 1, &n);
   jv_free(root);
   if(!text)
     return -1;
   rc = file_write_private(path, text, n);
-  /* a temporary copy of secrets should not linger in freed memory for longer than needed */
   memset(text, 0, n);
   free(text);
   return rc;
 }
 
-int vars_load(var_store *s, const char *path, char *err, size_t n)
+static void store_from_jv(var_store *s, const jv *root)
 {
-  size_t len = 0;
-  char *text = file_read_all(path, &len, VARS_FILE_MAX);
-  char perr[128], moved[2048];
-  jv *root, *envs;
+  const jv *envs = jv_get(root, "environments");
   const char *active;
   int i, k;
-  if(!text)
-    return 0;
-  perr[0] = '\0';
-  root = jv_parse(text, len, perr, sizeof(perr));
-  free(text);
-  envs = jv_get(root, "environments");
-  if(!root || jv_kind(envs) != JV_ARR || !jv_len(envs)) {
-    moved[0] = '\0';
-    if(file_quarantine(path, moved, sizeof(moved)))
-      moved[0] = '\0';
-    snprintf(err, n, "%s could not be read (%s) and was moved to %s", path, perr[0] ? perr : "not a variables file",
-             moved[0] ? moved : "nowhere");
-    jv_free(root);
-    return -1;
-  }
   vars_free(s);
-  memset(s, 0, sizeof(*s));
   for(i = 0; i < jv_len(envs); i++) {
     const jv *env = jv_at(envs, i), *vars = jv_get(env, "variables");
     const char *name = jv_str(jv_get(env, "name"));
@@ -510,6 +571,43 @@ int vars_load(var_store *s, const char *path, char *err, size_t n)
   for(i = 0; active && i < s->n; i++)
     if(!strcmp(s->e[i].name, active))
       s->active = i;
+}
+
+int book_load(var_book *b, const char *path, char *err, size_t n)
+{
+  size_t len = 0;
+  char *text = file_read_all(path, &len, VARS_FILE_MAX);
+  char perr[128], moved[2048];
+  jv *root, *colls;
+  int i;
+  if(!text)
+    return 0;
+  perr[0] = '\0';
+  root = jv_parse(text, len, perr, sizeof(perr));
+  free(text);
+  colls = jv_get(root, "collections");
+  if(jv_kind(colls) != JV_OBJ && jv_kind(jv_get(root, "environments")) != JV_ARR) {
+    moved[0] = '\0';
+    if(file_quarantine(path, moved, sizeof(moved)))
+      moved[0] = '\0';
+    snprintf(err, n, "%s could not be read (%s) and was moved to %s", path, perr[0] ? perr : "not a variables file",
+             moved[0] ? moved : "nowhere");
+    jv_free(root);
+    return -1;
+  }
+  if(jv_kind(colls) == JV_OBJ) {
+    for(i = 0; i < jv_len(colls); i++) {
+      const char *id = jv_key_at(colls, i);
+      var_store *s = strlen(id) == 16 ? book_get(b, id) : NULL;
+      if(s)
+        store_from_jv(s, jv_at(colls, i));
+    }
+  }
+  else {
+    var_store *s = book_get(b, VARS_DEFAULT_ID);
+    if(s)
+      store_from_jv(s, root);
+  }
   jv_free(root);
   return 0;
 }

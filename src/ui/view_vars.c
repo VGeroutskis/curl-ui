@@ -13,10 +13,10 @@ static unsigned long hash_text(unsigned long h, const char *s)
   return (h ^ 0xFF) * 16777619u;
 }
 
-static unsigned long store_hash(const var_store *s)
+static unsigned long store_hash(const var_store *s, unsigned long h)
 {
-  unsigned long h = 2166136261u + (unsigned long)s->active;
   int i, k;
+  h = (h ^ (unsigned long)s->active) * 16777619u;
   for(i = 0; i < s->n; i++) {
     h = hash_text(h, s->e[i].name);
     for(k = 0; k < s->e[i].n; k++) {
@@ -30,25 +30,31 @@ static unsigned long store_hash(const var_store *s)
 
 unsigned long app_vars_hash(const app_t *a)
 {
-  return store_hash(&a->vars);
+  unsigned long h = 2166136261u;
+  int i;
+  for(i = 0; i < a->book.n; i++) {
+    h = hash_text(h, a->book.e[i]->id);
+    h = store_hash(&a->book.e[i]->st, h);
+  }
+  return h;
 }
 
 void app_vars_save(app_t *a)
 {
-  a->vars_hash = store_hash(&a->vars);
-  if(a->vars_path[0] && vars_save(&a->vars, a->vars_path))
+  a->vars_hash = app_vars_hash(a);
+  if(a->vars_path[0] && book_save(&a->book, a->vars_path))
     app_notice(a, "Could not save the variables. They are still here until you close the app.");
 }
 
 void app_vars_autosave(app_t *a)
 {
-  if(!a->any_focus && store_hash(&a->vars) != a->vars_hash)
+  if(!a->any_focus && app_vars_hash(a) != a->vars_hash)
     app_vars_save(a);
 }
 
 void app_vars_flush(app_t *a)
 {
-  if(store_hash(&a->vars) != a->vars_hash)
+  if(app_vars_hash(a) != a->vars_hash)
     app_vars_save(a);
 }
 
@@ -67,11 +73,17 @@ static void stars(app_t *a, struct nk_rect r)
   ui_text_fit(a, a->f.mono_small, r.x + 9, r.y, r.h, r.w - 16, "********", p->dim);
 }
 
+static var_store *vars_store(app_t *a)
+{
+  return book_get(&a->book, a->vars_for[0] ? a->vars_for : VARS_DEFAULT_ID);
+}
+
 static void env_controls(app_t *a, float x, float y, float w)
 {
   const palette *p = &a->pal;
-  var_store *st = &a->vars;
+  var_store *st = vars_store(a);
   float name_w = w - 196 - 62;
+  float pick_w = 130;
   nk_flags state;
   int taken;
   if(a->env_edit_for != st->active || !a->env_edit[0]) {
@@ -80,12 +92,27 @@ static void env_controls(app_t *a, float x, float y, float w)
       a->env_edit_for = st->active;
     }
   }
-  ui_text_fit(a, a->f.small, x, y, 30, 56, "Name", p->dim);
-  state = ui_edit(a, nk_rect(x + 40, y, name_w - 40, 30), a->env_edit, (int)sizeof(a->env_edit), "name", a->f.sans, 0);
+  /* which environment, then its name */
+  a->env_btn = nk_rect(x, y + 1, pick_w, 28);
+  {
+    struct nk_rect e = a->env_btn;
+    float ax = e.x + e.w - 16, ay = e.y + 12;
+    int he = ui_hover(a, e);
+    ui_rect(a, e, 5, he ? p->hover : p->bg);
+    ui_stroke(a, e, 5, p->border);
+    ui_text_fit(a, a->f.small, e.x + 9, e.y, e.h, e.w - 30, st->e[st->active].name, p->text);
+    nk_fill_triangle(nk_window_get_canvas(a->ctx), ax - 4, ay, ax + 4, ay, ax, ay + 5, p->dim);
+    if(he)
+      a->cursor = CURSOR_HAND;
+    if(ui_clicked(a, e))
+      a->env_menu = !a->env_menu;
+  }
+  ui_text_fit(a, a->f.small, x + pick_w + 8, y, 30, 40, "Name", p->dim);
+  state = ui_edit(a, nk_rect(x + pick_w + 48, y, name_w - pick_w - 48, 30), a->env_edit, (int)sizeof(a->env_edit), "name", a->f.sans, 0);
   a->env_editing = (state & NK_EDIT_ACTIVE) != 0;
   taken = strcmp(a->env_edit, st->e[st->active].name) != 0;
   if(taken && env_rename(st, st->active, a->env_edit))
-    ui_stroke(a, nk_rect(x + 40, y, name_w - 40, 30), 5, p->amber);
+    ui_stroke(a, nk_rect(x + pick_w + 48, y, name_w - pick_w - 48, 30), 5, p->amber);
   x += name_w + 8;
   if(ui_button(a, nk_rect(x, y + 1, 56, 28), "New", BTN_SECONDARY)) {
     char name[64];
@@ -129,7 +156,7 @@ static void env_controls(app_t *a, float x, float y, float w)
 void view_vars(app_t *a, struct nk_rect r)
 {
   const palette *p = &a->pal;
-  var_env *e = &a->vars.e[a->vars.active];
+  var_env *e = &vars_store(a)->e[vars_store(a)->active];
   struct nk_rect body;
   float x = r.x + 16, w = r.w - 32 - 8, y;
   float name_w = NK_MIN(190, w * 0.32f), sec_w = 60, eye_w = 28, del_w = 24;
@@ -138,15 +165,24 @@ void view_vars(app_t *a, struct nk_rect r)
   int i, remove_row = -1;
 
   ui_push_clip(a, r);
-  ui_text_fit(a, a->f.title, x, r.y + 12, 28, 200, "Variables", p->text);
+  {
+    char title[320];
+    int c;
+    const char *name = "My requests";
+    for(c = 0; c < a->ncolls; c++)
+      if(!strcmp(a->colls[c]->id, a->vars_for))
+        name = a->colls[c]->root->name;
+    snprintf(title, sizeof(title), "Variables of %.280s", name);
+    ui_text_fit(a, a->f.title, x, r.y + 12, 28, r.w - 130, title, p->text);
+  }
   if(ui_button(a, nk_rect(r.x + r.w - 16 - 70, r.y + 12, 70, 28), "Done", BTN_PRIMARY)) {
     hide_values(e);
     a->show_vars = 0;
     a->pending_unfocus = 1;
   }
   env_controls(a, x, r.y + 48, w);
-  e = &a->vars.e[a->vars.active];
-  ui_text_fit(a, a->f.small, x, r.y + 84, 18, w, "Used as {{name}} in the URL and in any option. Only this table gives them values.", p->faint);
+  e = &vars_store(a)->e[vars_store(a)->active];
+  ui_text_fit(a, a->f.small, x, r.y + 84, 18, w, "Used as {{name}} in the URL and any option of this collection's requests. Only this table gives them values.", p->faint);
 
   y = r.y + 108;
   ui_text_fit(a, a->f.small, x, y, 20, name_w, "Name", p->dim);
@@ -228,11 +264,11 @@ void view_vars(app_t *a, struct nk_rect r)
   app_vars_autosave(a);
 }
 
-/* ---- the environment menu in the header ---- */
+/* ---- the environment menu in the table ---- */
 
 struct nk_rect env_menu_rect(app_t *a)
 {
-  float h = (float)(a->vars.n + 1) * 26 + 8;
+  float h = (float)vars_store(a)->n * 26 + 8;
   return nk_rect(a->env_btn.x, a->env_btn.y + a->env_btn.h + 4, NK_MAX(a->env_btn.w, 190), h);
 }
 
@@ -240,7 +276,7 @@ int env_menu_item_at(app_t *a, struct nk_vec2 pos)
 {
   struct nk_rect m = env_menu_rect(a);
   int i;
-  for(i = 0; i <= a->vars.n; i++)
+  for(i = 0; i < vars_store(a)->n; i++)
     if(NK_INBOX(pos.x, pos.y, m.x + 4, m.y + 4 + (float)i * 26, m.w - 8, 26))
       return i;
   return -1;
@@ -248,23 +284,19 @@ int env_menu_item_at(app_t *a, struct nk_vec2 pos)
 
 void env_menu_pick(app_t *a, int item)
 {
-  if(item < 0)
+  var_store *st = vars_store(a);
+  if(item < 0 || item >= st->n)
     return;
-  if(item < a->vars.n) {
-    a->vars.active = item;
-    a->env_del_armed = 0;
-    app_vars_save(a);
-  }
-  else {
-    a->show_vars = 1;
-    a->show_settings = 0;
-  }
+  st->active = item;
+  a->env_del_armed = 0;
+  app_vars_save(a);
   a->pending_unfocus = 1;
 }
 
 void env_menu_draw(app_t *a)
 {
   const palette *p = &a->pal;
+  var_store *st = vars_store(a);
   struct nk_rect m = env_menu_rect(a);
   const struct nk_input *in = &a->ctx->input;
   int i;
@@ -272,13 +304,12 @@ void env_menu_draw(app_t *a)
   ui_rect(a, nk_rect(m.x + 1, m.y + 2, m.w, m.h), 7, nk_rgba(0, 0, 0, 60));
   ui_rect(a, m, 7, p->card);
   ui_stroke(a, m, 7, p->border_strong);
-  for(i = 0; i <= a->vars.n; i++) {
+  for(i = 0; i < st->n; i++) {
     struct nk_rect item = nk_rect(m.x + 4, m.y + 4 + (float)i * 26, m.w - 8, 26);
     if(nk_input_is_mouse_hovering_rect(in, item)) {
       ui_rect(a, item, 4, p->hover);
       a->cursor = CURSOR_HAND;
     }
-    ui_text_fit(a, a->f.small, item.x + 8, item.y, 26, item.w - 16, i < a->vars.n ? a->vars.e[i].name : "Variables...",
-                i == a->vars.active ? p->accent : p->text);
+    ui_text_fit(a, a->f.small, item.x + 8, item.y, 26, item.w - 16, st->e[i].name, i == st->active ? p->accent : p->text);
   }
 }

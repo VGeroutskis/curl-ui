@@ -402,7 +402,7 @@ static int write_dump(app_t *a, const char *path)
         fprintf(f, "body_row=%s:%s:%d\n", CUR(a)->body_rows.r[k].key, CUR(a)->body_rows.r[k].value, CUR(a)->body_rows.r[k].enabled);
     }
     fprintf(f, "node=%s\ndirty=%d\ntitle=%s\n", CUR(a)->node_id, CUR(a)->dirty, CUR(a)->title);
-    fprintf(f, "env=%s\nshow_vars=%d\nnotice=%s\nmodal=%d\nmodal_missing=", a->vars.e[a->vars.active].name, a->show_vars,
+    fprintf(f, "env=%s\nvars_for=%s\nshow_vars=%d\nnotice=%s\nmodal=%d\nmodal_missing=", app_tab_env(a, CUR(a))->name, a->vars_for, a->show_vars,
             a->notice, a->modal_open);
     for(i = 0; i < a->modal_names.n; i++)
       fprintf(f, "%s%s", i ? "," : "", a->modal_names.s[i]);
@@ -527,7 +527,7 @@ int main(int argc, char **argv)
     settings_load(&a->set, a->settings_path);
     if(!settings_path(settings_dir, "variables.json", a->vars_path, sizeof(a->vars_path))) {
       char err[4096];
-      if(vars_load(&a->vars, a->vars_path, err, sizeof(err)))
+      if(book_load(&a->book, a->vars_path, err, sizeof(err)))
         app_notice(a, err);
     }
     settings_path(settings_dir, "history.jsonl", a->hist_path, sizeof(a->hist_path));
@@ -555,6 +555,8 @@ int main(int argc, char **argv)
       a->set.legacy_remember = 0;
     }
   }
+  app_ensure_default_collection(a);
+  app_tab_store(a, CUR(a));  /* an empty table is nothing to save */
   a->vars_hash = app_vars_hash(a);
   CUR(a)->pretty = a->set.pretty;
   screenshot = NULL;
@@ -672,18 +674,19 @@ int main(int argc, char **argv)
         return 2;
       }
       snprintf(name, sizeof(name), "%.*s", (int)(eq - v), v);
-      var_set(&a->vars.e[a->vars.active], name, eq + 1, arg[2] == 's');
+      var_set(app_tab_env(a, CUR(a)), name, eq + 1, arg[2] == 's');
     }
     else if(!strcmp(arg, "--env")) {
       const char *name = NEXT();
       int k, found = -1;
-      for(k = 0; k < a->vars.n; k++)
-        if(!strcmp(a->vars.e[k].name, name))
+      var_store *st = app_tab_store(a, CUR(a));
+      for(k = 0; k < st->n; k++)
+        if(!strcmp(st->e[k].name, name))
           found = k;
       if(found < 0)
-        found = env_add(&a->vars, name);
+        found = env_add(st, name);
       if(found >= 0)
-        a->vars.active = found;
+        st->active = found;
     }
     else if(!strcmp(arg, "--form")) {
       static const char *const names[FORM_COUNT] = { "params", "headers", "body", "auth", "curl" };
@@ -794,12 +797,12 @@ int main(int argc, char **argv)
     }
     else if(!strcmp(arg, "--sidebar")) {
       const char *v = NEXT();
-      a->sidebar = !strcmp(v, "collections") ? SIDE_COLLECTIONS : !strcmp(v, "history") ? SIDE_HISTORY : SIDE_OPTIONS;
+      a->sidebar = !strcmp(v, "history") ? SIDE_HISTORY : SIDE_COLLECTIONS;
     }
     else if(!strcmp(arg, "--reveal"))
       CUR(a)->reveal = 1;
     else if(!strcmp(arg, "--open-vars"))
-      a->show_vars = 1;
+      app_open_vars(a, tab_coll(CUR(a)));
     else if((!strcmp(arg, "--modal-value") || !strcmp(arg, "--modal-action")) && nops < MAX_SCRIPT) {
       script_op *op = &ops[nops++];
       op->kind = arg[8] == 'v' ? SC_MODAL_VALUE : SC_MODAL_ACTION;

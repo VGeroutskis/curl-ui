@@ -612,15 +612,20 @@ void view_center(app_t *a, struct nk_rect r)
   /* Output height comes from the space really left, not a fixed share. */
   cmd_h = command_height(a, w);
   avail = r.y + r.h - y - 12 - CARD_GAP * 2 - cmd_h;
-  out_h = NK_MAX(190, avail * 0.52f);
+  /* the option list needs the room more than the output does */
+  out_h = CUR(a)->form == FORM_CURL ? NK_MAX(150, avail * 0.3f) : NK_MAX(190, avail * 0.52f);
   list_h = avail - out_h;
   if(list_h < 110) {
     list_h = 110;
     out_h = avail - list_h;
   }
 
-  if(CUR(a)->form == FORM_CURL)
-    draw_list(a, nk_rect(x, y, w, list_h));
+  if(CUR(a)->form == FORM_CURL) {
+    float lib_w = NK_CLAMP(230, w * 0.42f, 300);
+    view_library(a, nk_rect(x - 12, y, lib_w, list_h));
+    ui_push_clip(a, r);
+    draw_list(a, nk_rect(x + lib_w - 4, y, w - lib_w + 4, list_h));
+  }
   else {
     view_form(a, nk_rect(x, y, w, list_h));
     ui_push_clip(a, r);

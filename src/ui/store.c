@@ -11,6 +11,73 @@
 
 #define SESSION_MAX ((size_t)1 << 30)
 
+const char *tab_coll(const tab_t *t)
+{
+  return t->coll_id[0] ? t->coll_id : VARS_DEFAULT_ID;
+}
+
+var_store *app_tab_store(app_t *a, const tab_t *t)
+{
+  return book_get(&a->book, tab_coll(t));
+}
+
+var_env *app_tab_env(app_t *a, const tab_t *t)
+{
+  var_store *st = app_tab_store(a, t);
+  return &st->e[st->active];
+}
+
+void app_open_vars(app_t *a, const char *coll_id)
+{
+  snprintf(a->vars_for, sizeof(a->vars_for), "%s", coll_id);
+  a->show_vars = 1;
+  a->show_settings = 0;
+  a->env_edit_for = -1;
+  a->env_del_armed = 0;
+  a->pending_unfocus = 1;
+}
+
+/* A request now in another collection takes along the variables it uses. */
+static void tab_follow_collection(app_t *a, tab_t *t, const coll_node *n)
+{
+  const collection *c = coll_of(a->colls, a->ncolls, n);
+  const char *id = c ? c->id : VARS_DEFAULT_ID;
+  if(strcmp(id, tab_coll(t))) {
+    var_env *from = app_tab_env(a, t);
+    var_store *to = book_get(&a->book, id);
+    if(to)
+      vars_copy_used(from, &to->e[to->active], &t->args_tmpl);
+  }
+  snprintf(t->coll_id, sizeof(t->coll_id), "%s", id);
+}
+
+void app_tabs_refresh_coll(app_t *a)
+{
+  int i;
+  for(i = 0; i < a->ntabs; i++) {
+    tab_t *t = a->tabs[i];
+    const coll_node *n = t->node_id[0] ? app_find_node(a, t->node_id) : NULL;
+    if(n)
+      tab_follow_collection(a, t, n);
+  }
+}
+
+void app_ensure_default_collection(app_t *a)
+{
+  collection *c;
+  int i;
+  for(i = 0; i < a->ncolls; i++)
+    if(!strcmp(a->colls[i]->id, VARS_DEFAULT_ID))
+      return;
+  c = app_new_collection(a, "My requests");
+  if(c) {
+    /* first in the tree, and on disk only when something goes in it */
+    memcpy(c->id, VARS_DEFAULT_ID, sizeof(c->id));
+    memmove(&a->colls[1], &a->colls[0], sizeof(collection *) * (size_t)(a->ncolls - 1));
+    a->colls[0] = c;
+  }
+}
+
 static const char *const g_method_names[METHOD_COUNT] = {
   "", "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"
 };
@@ -149,6 +216,10 @@ void app_open_node(app_t *a, coll_node *n)
   tab_load(t, n->req);
   memcpy(t->node_id, n->id, sizeof(t->node_id));
   snprintf(t->title, sizeof(t->title), "%s", n->name);
+  {
+    const collection *c = coll_of(a->colls, a->ncolls, n);
+    snprintf(t->coll_id, sizeof(t->coll_id), "%s", c ? c->id : "");
+  }
   tab_mark_clean(t);
   if(t->extra)
     app_notice(a, "This request has options this version does not know. They are kept when you save it.");
@@ -205,6 +276,7 @@ int tab_save_to_node(app_t *a, tab_t *t, coll_node *n)
     return -1;
   }
   jv_free(old);
+  tab_follow_collection(a, t, n);
   memcpy(t->node_id, n->id, sizeof(t->node_id));
   snprintf(t->title, sizeof(t->title), "%s", n->name);
   tab_mark_clean(t);
@@ -426,6 +498,10 @@ void app_session_load(app_t *a)
       t->params_url = NULL;
       memcpy(t->node_id, n->id, sizeof(t->node_id));
       snprintf(t->title, sizeof(t->title), "%s", n->name);
+      {
+        const collection *c = coll_of(a->colls, a->ncolls, n);
+        snprintf(t->coll_id, sizeof(t->coll_id), "%s", c ? c->id : "");
+      }
     }
     else
       tab_mark_clean(t);

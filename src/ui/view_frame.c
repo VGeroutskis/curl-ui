@@ -90,21 +90,6 @@ void view_header(app_t *a, struct nk_rect r)
           a->show_settings = !a->show_settings;
           a->show_vars = 0;
         }
-        /* the environment: variables take their values from it */
-        a->env_btn = nk_rect(gear.x - 8 - 170, cy - 13, 170, 26);
-        {
-          struct nk_rect e = a->env_btn;
-          int he = ui_hover(a, e);
-          float ax = e.x + e.w - 16, ay = cy - 2;
-          ui_rect(a, e, 5, he ? p->hover : p->bg);
-          ui_stroke(a, e, 5, a->show_vars ? p->accent : p->border);
-          ui_text_fit(a, a->f.small, e.x + 9, e.y, e.h, e.w - 30, a->vars.e[a->vars.active].name, p->text);
-          nk_fill_triangle(cv, ax - 4, ay, ax + 4, ay, ax, ay + 5, p->dim);
-          if(he)
-            a->cursor = CURSOR_HAND;
-          if(ui_clicked(a, e))
-            a->env_menu = !a->env_menu;
-        }
       }
     }
   }
@@ -136,10 +121,13 @@ void view_frame(app_t *a)
   }
   a->reveal_tab = CUR(a);
   if(!a->show_vars) {
-    var_env *ve = &a->vars.e[a->vars.active];
-    int k;
-    for(k = 0; k < ve->n; k++)
-      ve->v[k].reveal = 0;
+    int b, e, k;
+    for(b = 0; b < a->book.n; b++) {
+      var_store *st = &a->book.e[b]->st;
+      for(e = 0; e < st->n; e++)
+        for(k = 0; k < st->e[e].n; k++)
+          st->e[e].v[k].reveal = 0;
+    }
   }
   a->cursor = CURSOR_ARROW;
   a->hover_frame = -1;

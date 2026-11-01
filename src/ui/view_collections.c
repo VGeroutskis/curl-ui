@@ -58,7 +58,22 @@ static void draw_node(app_t *a, struct nk_rect r, coll_node *n, int depth, float
       nk_fill_triangle(cv, x, cy - 3, x + 8, cy - 3, x + 4, cy + 3, p->dim);
     else
       nk_fill_triangle(cv, x + 1, cy - 4, x + 1, cy + 4, x + 7, cy, p->dim);
-    ui_text_fit(a, top ? a->f.semi : a->f.small, x + 13, *y, NODE_H, r.w - (x - r.x) - 44, n->name, p->text);
+    {
+      float name_w = r.w - (x - r.x) - 44;
+      if(top) {
+        const collection *c = coll_of(a->colls, a->ncolls, n);
+        const var_store *st = c ? book_get(&a->book, c->id) : NULL;
+        if(st && st->n > 1) {
+          /* the environment in use, and the way to it */
+          const char *env = st->e[st->active].name;
+          float ew = NK_MIN(ui_text_w(a->f.small, env, (int)strlen(env)) + 4, 80);
+          struct nk_rect tag = nk_rect(r.x + r.w - 34 - ew, *y, ew, NODE_H);
+          ui_text_fit(a, a->f.small, tag.x, tag.y, tag.h, tag.w, env, p->accent);
+          name_w -= ew + 8;
+        }
+      }
+      ui_text_fit(a, top ? a->f.semi : a->f.small, x + 13, *y, NODE_H, name_w, n->name, p->text);
+    }
   }
   else {
     int active = !strcmp(CUR(a)->node_id, n->id);
@@ -202,7 +217,7 @@ void view_history(app_t *a, struct nk_rect r)
 
 void view_sidebar(app_t *a, struct nk_rect r)
 {
-  static const char *const names[SIDE_COUNT] = { "Collections", "History", "Options" };
+  static const char *const names[SIDE_COUNT] = { "Collections", "History" };
   const palette *p = &a->pal;
   struct nk_command_buffer *cv = nk_window_get_canvas(a->ctx);
   float w = r.w / SIDE_COUNT;
@@ -226,10 +241,6 @@ void view_sidebar(app_t *a, struct nk_rect r)
       a->pending_unfocus = 1;
     }
   }
-  if(a->sidebar == SIDE_OPTIONS) {
-    view_library(a, below);
-    return;
-  }
   below.y += 6;
   below.h -= 6;
   if(a->sidebar == SIDE_COLLECTIONS)
@@ -240,11 +251,21 @@ void view_sidebar(app_t *a, struct nk_rect r)
 
 /* ---- the node's menu ---- */
 
-typedef enum { TM_NEW_REQ, TM_NEW_FOLDER, TM_RENAME, TM_COPY, TM_MOVE, TM_DELETE } tm_item;
+typedef enum { TM_VARIABLES, TM_NEW_REQ, TM_NEW_FOLDER, TM_RENAME, TM_COPY, TM_MOVE, TM_DELETE } tm_item;
+
+static const collection *g_menu_coll;
+
+static const char *g_top_id(const coll_node *n)
+{
+  (void)n;
+  return g_menu_coll ? g_menu_coll->id : "";
+}
 
 static int tree_menu_items(const coll_node *n, tm_item *out)
 {
   int c = 0;
+  if(!n->parent)
+    out[c++] = TM_VARIABLES;
   if(n->kind == NODE_FOLDER) {
     out[c++] = TM_NEW_REQ;
     out[c++] = TM_NEW_FOLDER;
@@ -254,21 +275,25 @@ static int tree_menu_items(const coll_node *n, tm_item *out)
     out[c++] = TM_COPY;
     out[c++] = TM_MOVE;
   }
-  out[c++] = TM_DELETE;
+  /* My requests is where unsaved tabs take their variables from: it stays */
+  if(n->parent || strcmp(g_top_id(n), VARS_DEFAULT_ID))
+    out[c++] = TM_DELETE;
   return c;
 }
 
 static struct nk_rect tree_menu_rect(app_t *a)
 {
-  tm_item items[6];
-  int n = tree_menu_items(a->tree_menu, items);
+  tm_item items[7];
+  int n;
+  g_menu_coll = coll_of(a->colls, a->ncolls, a->tree_menu);
+  n = tree_menu_items(a->tree_menu, items);
   return nk_rect(a->tree_menu_at.x, a->tree_menu_at.y, 130, (float)n * 26 + 8);
 }
 
 void tree_menu_click(app_t *a, struct nk_vec2 pos)
 {
   static const tm_item none = (tm_item)-1;
-  tm_item items[6], hit = none;
+  tm_item items[7], hit = none;
   coll_node *n = a->tree_menu;
   struct nk_rect m = tree_menu_rect(a);
   int c = tree_menu_items(n, items), i;
@@ -277,6 +302,12 @@ void tree_menu_click(app_t *a, struct nk_vec2 pos)
       hit = items[i];
   a->tree_menu = NULL;
   switch(hit) {
+  case TM_VARIABLES: {
+    const collection *c = coll_of(a->colls, a->ncolls, n);
+    if(c)
+      app_open_vars(a, c->id);
+    break;
+  }
   case TM_NEW_REQ:
   case TM_NEW_FOLDER:
     dialog_open(a, hit == TM_NEW_REQ ? DLG_NEW_REQUEST : DLG_NEW_FOLDER, n);
@@ -307,10 +338,10 @@ void tree_menu_click(app_t *a, struct nk_vec2 pos)
 
 void tree_menu_draw(app_t *a)
 {
-  static const char *const labels[] = { "New request", "New folder", "Rename", "Duplicate", "Move...", "Delete" };
+  static const char *const labels[] = { "Variables...", "New request", "New folder", "Rename", "Duplicate", "Move...", "Delete" };
   const palette *p = &a->pal;
   const struct nk_input *in = &a->ctx->input;
-  tm_item items[6];
+  tm_item items[7];
   struct nk_rect m = tree_menu_rect(a);
   int c = tree_menu_items(a->tree_menu, items), i;
   ui_push_clip(a, nk_rect(0, 0, a->W, a->H));
@@ -386,6 +417,7 @@ static void forget_node_tabs(app_t *a, const coll_node *n)
       if(!strcmp(a->tabs[i]->node_id, n->id)) {
         /* still open, now unsaved */
         a->tabs[i]->node_id[0] = '\0';
+        a->tabs[i]->coll_id[0] = '\0';
         a->tabs[i]->dirty_sig = 0;
         free(a->tabs[i]->saved_json);
         a->tabs[i]->saved_json = NULL;
@@ -453,6 +485,7 @@ static void dialog_confirm(app_t *a)
           app_notice(a, "Could not save the collection.");
         if(dest && dest != from && coll_save(dest, a->coll_dir))
           app_notice(a, "Could not save the collection.");
+        app_tabs_refresh_coll(a);
       }
       else
         app_notice(a, "A folder cannot move into itself.");
@@ -461,6 +494,12 @@ static void dialog_confirm(app_t *a)
   case DLG_DELETE: {
     collection *c = coll_of(a->colls, a->ncolls, n);
     forget_node_tabs(a, n);
+    if(!n->parent && c) {
+      book_remove(&a->book, c->id);
+      app_vars_save(a);
+      if(!strcmp(a->vars_for, c->id))
+        a->show_vars = 0;
+    }
     if(n->parent) {
       coll_node *keep = n->parent;
       coll_remove(n);
@@ -575,7 +614,7 @@ void view_dialog(app_t *a)
     ok = "Delete";
     name_field = 0;
     destructive = 1;
-    hint = a->dlg_node->kind == NODE_REQUEST ? "If it is open in a tab, the tab stays, unsaved." : "With everything in it.";
+    hint = a->dlg_node->kind == NODE_REQUEST ? "If it is open in a tab, the tab stays, unsaved." : a->dlg_node->parent ? "With everything in it." : "With everything in it, and its variables.";
     break;
   case DLG_CLOSE_TAB:
     title = "This tab has unsaved changes";

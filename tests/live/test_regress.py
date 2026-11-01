@@ -52,7 +52,7 @@ def main():
         app(s, "--env", "A", "--env", "B", "--env", "Default", "--var", "x=y", "--open-vars",
             "--click", "904,143", "--click", "904,143")
         with open(os.path.join(s, "variables.json"), encoding="utf-8") as f:
-            names = [e["name"] for e in json.load(f)["environments"]]
+            names = [e["name"] for e in json.load(f)["collections"]["0000000000000000"]["environments"]]
         check(names == ["A", "B"], "deleting an environment leaves the others' names: %s" % names)
 
         rc, text = app(fresh(), "--url", "http://h/", "--form", "auth", "--click", "717,176",
@@ -64,7 +64,7 @@ def main():
         s = fresh()
         app(s, "--var", "a=1", "--open-vars", "--click", "700,227", "--type", "abc")
         with open(os.path.join(s, "variables.json"), encoding="utf-8") as f:
-            value = json.load(f)["environments"][0]["variables"][0]["value"]
+            value = json.load(f)["collections"]["0000000000000000"]["environments"][0]["variables"][0]["value"]
         check("abc" in value, "a value being typed is saved at exit: %r" % value)
 
         s = fresh()
@@ -89,6 +89,12 @@ def main():
         rc, text = app(fresh(), "--secret", "t=SECRETVALUE", "--url", "http://x/{{t}}", "--reveal", "--click", "197,64",
                        "--select-tab", "0")
         check("SECRETVALUE" not in text.split("copy_command=")[0], "the eye closes after leaving the tab by +")
+
+        # the way to a collection's variables, and to its environments, with clicks
+        rc, text = app(fresh(), "--mouse", "200,203", "--click", "328,203", "--click", "353,229")
+        check("show_vars=1" in text and "vars_for=0000000000000000" in text, "a collection's menu opens its variables")
+        rc, text = app(fresh(), "--env", "One", "--env", "Two", "--open-vars", "--click", "420,143", "--click", "420,216")
+        check("env=One" in text, "the table's menu changes the environment: %s" % text.split("env=")[1].split("\n")[0])
 
         s = fresh()
         os.makedirs(s)

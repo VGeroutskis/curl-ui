@@ -33,12 +33,30 @@ typedef struct {
   int n;
 } str_list;
 
+/* Each collection has its own environments. Requests not saved in one use My requests. */
+#define VARS_DEFAULT_ID "0000000000000000"
+
+typedef struct {
+  char id[17];
+  var_store st;
+} var_book_entry;
+
+typedef struct {
+  var_book_entry **e;
+  int n;
+} var_book;
+
 void vars_init(var_store *s);  /* one environment named Default */
 void vars_free(var_store *s);
-/* A missing file is fine: 0. A damaged one is moved aside and the store starts over: -1,
-   with err saying where it went. */
-int vars_load(var_store *s, const char *path, char *err, size_t n);
-int vars_save(const var_store *s, const char *path);  /* rows with a bad or repeated name stay out */
+
+void book_init(var_book *b);
+void book_free(var_book *b);
+var_store *book_get(var_book *b, const char *id);  /* made on first use; the pointer stays valid */
+void book_remove(var_book *b, const char *id);
+/* A missing file is fine: 0. A damaged one is moved aside and the book starts over: -1,
+   with err saying where it went. A file from before collections had tables goes to My requests. */
+int book_load(var_book *b, const char *path, char *err, size_t n);
+int book_save(const var_book *b, const char *path);  /* rows with a bad or repeated name stay out */
 
 int vars_name_ok(const char *name);  /* [A-Za-z0-9_.-]+ */
 var_t *var_find(const var_env *e, const char *name);
@@ -53,6 +71,9 @@ int vars_suggest_secret(const char *name);
 /* Names used in args that e does not have: once each, in order of use. */
 int vars_missing(const var_env *e, const arg_list *tmpl, str_list *out);
 void str_list_free(str_list *l);
+/* What tmpl uses and to does not have comes over from from: a request moving to another
+   collection keeps working. Returns how many. */
+int vars_copy_used(const var_env *from, var_env *to, const arg_list *tmpl);
 /* real has the values, shown has ******** for secrets, token for token. In the query of a
    URL a value is percent encoded. A value is not read again for more names, and a name that
    e does not have stays as {{name}}. */
