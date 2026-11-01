@@ -482,12 +482,12 @@ int main(int argc, char **argv)
     void *decor = SDL_LoadObject("libdecor-0.so.0");
     if(decor) {
       SDL_UnloadObject(decor);
-      SDL_SetHint(SDL_HINT_VIDEODRIVER, "wayland");
+      SDL_setenv("SDL_VIDEODRIVER", "wayland", 1);  /* the hint needs SDL 2.0.22 */
     }
   }
 #endif
   if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
-    SDL_SetHint(SDL_HINT_VIDEODRIVER, "");
+    SDL_setenv("SDL_VIDEODRIVER", "", 1);
     SDL_ClearError();
     if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
       fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
