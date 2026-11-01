@@ -356,7 +356,7 @@ void view_picker(app_t *a)
   }
   free(up);
   fw = x + w - 18 - bx;
-  st = ui_edit(a, nk_rect(bx, by, fw, 28), k->path, (int)sizeof(k->path), "folder", a->f.mono_small, NK_EDIT_SIG_ENTER);
+  st = ui_edit(a, nk_rect(bx, by, fw, 28), k->path, (int)sizeof(k->path), "folder", a->f.mono_small, NK_EDIT_SIG_ENTER | NK_EDIT_AUTO_SELECT);
   if(st & NK_EDIT_COMMITED) {
     char *typed = fs_resolve(k->dir, k->path);
     k->err[0] = '\0';

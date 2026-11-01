@@ -12,34 +12,24 @@ permissions:
   contents: read
 
 jobs:
-  linux:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          # the oldest supported runners set a low glibc floor for the packages
-          - { runner: ubuntu-22.04, arch: x86_64 }
-          - { runner: ubuntu-22.04-arm, arch: aarch64 }
-    name: linux-${{ matrix.arch }}
-    runs-on: ${{ matrix.runner }}
+  # What does not depend on the system runs once, first. A mistake stops here in minutes,
+  # before the slow runners start. Each system below still runs its own tests.
+  common:
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v7
       - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y cmake libsdl2-dev rpm dpkg-dev curl
+        run: sudo apt-get update && sudo apt-get install -y cmake libsdl2-dev curl
       - name: Option table matches the pinned curl release
         run: |
           python3 tools/gen_options.py
           git diff --exit-code src/core/options_data.c
-      - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build
-        run: cmake --build build -j4
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j4
       - name: Test
         run: ctest --test-dir build --output-on-failure
-      - name: Screenshot smoke test
-        env:
-          SDL_VIDEODRIVER: dummy
-        run: ./build/curl-ui --add location --docs location --screenshot smoke.bmp && test -s smoke.bmp
       - name: Live tests of the app
         env:
           SDL_VIDEODRIVER: dummy
@@ -59,9 +49,57 @@ jobs:
         run: |
           cmake -S . -B build-san -DCMAKE_BUILD_TYPE=Debug -DCURLUI_SANITIZE=ON -DCURLUI_BUILD_GUI=OFF
           cmake --build build-san -j4
-          # all_args spawns ASan processes by the thousand, which takes over 8 minutes
-          # on the ARM runner against 33 seconds on x86_64, where it still runs
-          ctest --test-dir build-san --output-on-failure ${{ matrix.arch == 'aarch64' && '-E all_args' || '' }}
+          ctest --test-dir build-san --output-on-failure
+
+  linux:
+    needs: common
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # the oldest supported runners set a low glibc floor for the packages
+          - { runner: ubuntu-22.04, arch: x86_64 }
+          - { runner: ubuntu-22.04-arm, arch: aarch64 }
+    name: linux-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y cmake libsdl2-dev rpm dpkg-dev curl
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build build -j4
+      - name: Test
+        if: matrix.arch != 'x86_64'  # the common job ran them on this same system
+        run: ctest --test-dir build --output-on-failure
+      - name: Screenshot smoke test
+        env:
+          SDL_VIDEODRIVER: dummy
+        run: ./build/curl-ui --add location --docs location --screenshot smoke.bmp && test -s smoke.bmp
+      - name: Live tests of the app
+        if: matrix.arch != 'x86_64'
+        env:
+          SDL_VIDEODRIVER: dummy
+          PYTHONUTF8: 1
+        run: |
+          python3 tests/live/test_large.py --ui build/curl-ui
+          python3 tests/live/test_tabs.py --ui build/curl-ui
+          python3 tests/live/test_vars.py --ui build/curl-ui
+          python3 tests/live/test_mask.py --ui build/curl-ui
+          python3 tests/live/test_params.py --ui build/curl-ui
+          python3 tests/live/test_forms.py --ui build/curl-ui
+          python3 tests/live/test_store.py --ui build/curl-ui
+          python3 tests/live/test_import.py --ui build/curl-ui
+          python3 tests/live/test_picker.py --ui build/curl-ui
+          python3 tests/live/test_regress.py --ui build/curl-ui
+      - name: Sanitizers
+        if: matrix.arch == 'aarch64'
+        run: |
+          cmake -S . -B build-san -DCMAKE_BUILD_TYPE=Debug -DCURLUI_SANITIZE=ON -DCURLUI_BUILD_GUI=OFF
+          cmake --build build-san -j4
+          # all_args spawns ASan processes by the thousand: over 8 minutes on this runner
+          ctest --test-dir build-san --output-on-failure -E all_args
       - name: Package
         run: cd build && cpack
       - name: Inspect packages
@@ -107,6 +145,7 @@ jobs:
           if-no-files-found: error
 
   windows:
+    needs: common
     strategy:
       fail-fast: false
       matrix:
@@ -171,6 +210,7 @@ jobs:
           if-no-files-found: error
 
   macos:
+    needs: common
     strategy:
       fail-fast: false
       matrix:

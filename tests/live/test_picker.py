@@ -14,7 +14,7 @@ import threading
 seen = []
 
 # at --size 1440x900; the picker is 760x560 and centred
-PATH = "1075,230"  # past the end of the text, where typing goes on
+PATH = "600,230"
 NAME = "600,660"
 OK = "1050,704"
 CANCEL = "960,704"
@@ -108,9 +108,9 @@ def main():
                    "--double-click", "600,323")
         check(field(text, "picker") == "0" and "old.txt" in text, "and on a file it is the choice")
 
-        # The folder field takes typing, Enter goes there
+        # A click selects the folder field: what is typed replaces it, Enter goes there
         text = app("--form", "body", "--set-body", "file", "", "--click", BROWSE_BODY, *pick[:4],
-                   "--click", PATH, "--type", os.sep + "sub\n")
+                   "--click", PATH, "--type", os.path.join(files, "sub") + "\n")
         check(field(text, "picker_dir") == os.path.realpath(os.path.join(files, "sub")), "the folder field goes where it says")
 
         # The option cards offer it, in the right mode, and the value keeps its form
