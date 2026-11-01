@@ -21,7 +21,8 @@ checksums, or from the artifacts of the `curl-ui` workflow run:
 | Fedora, RHEL (x86_64, ARM64) | `curl-ui-*.x86_64.rpm`, `curl-ui-*.aarch64.rpm` | `sudo dnf install ./curl-ui-*.rpm` |
 | Any Linux (x86_64, ARM64) | `curl-ui-*-linux-*.AppImage` | `chmod +x`, then run it; SDL is included |
 | Any Linux (x86_64, ARM64) | `curl-ui-*-linux-*.tar.gz` | unpack; needs SDL2 installed |
-| macOS (arm64 + x86_64) | `curl-ui-*-macos-universal.dmg` | drag to Applications |
+| macOS Apple Silicon | `curl-ui-*-macos-apple-silicon.dmg` | drag to Applications |
+| macOS Intel | `curl-ui-*-macos-intel.dmg` | drag to Applications |
 
 The builds are not code signed. Windows SmartScreen and macOS Gatekeeper warn
 the first time; on macOS use right click, Open.

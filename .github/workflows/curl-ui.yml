@@ -23,7 +23,7 @@ jobs:
     name: linux-${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y cmake libsdl2-dev rpm dpkg-dev curl
       - name: Option table matches the pinned curl release
@@ -79,7 +79,7 @@ jobs:
         run: |
           ./build/curl-ui-*.AppImage --docs location --screenshot "$PWD/appimage.bmp"
           test -s appimage.bmp
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: curl-ui-linux-${{ matrix.arch }}
           path: |
@@ -99,7 +99,7 @@ jobs:
     name: windows-${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install NSIS
         run: choco install nsis -y --no-progress
       - name: Configure
@@ -130,7 +130,7 @@ jobs:
           if ($p.ExitCode -ne 0 -or -not (Test-Path "$env:TEMP\installed.bmp")) { exit 1 }
           $p = Start-Process -Wait -PassThru -FilePath "$dir\Uninstall.exe" -ArgumentList '/S'
           if ($p.ExitCode -ne 0) { exit 1 }
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: curl-ui-windows-${{ matrix.arch }}
           path: |
@@ -139,17 +139,24 @@ jobs:
           if-no-files-found: error
 
   macos:
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: macos-15-intel, arch: x86_64, name: intel }
+          - { runner: macos-15, arch: arm64, name: apple-silicon }
+    name: macos-${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }}
       - name: Build
         run: cmake --build build -j4
       - name: Test
         run: ctest --test-dir build --output-on-failure
-      - name: Check the binary is universal
-        run: lipo -info "build/curl UI.app/Contents/MacOS/curl UI" | grep -E 'x86_64.*arm64|arm64.*x86_64'
+      - name: Check the binary's architecture
+        run: test "$(lipo -archs "build/curl UI.app/Contents/MacOS/curl UI")" = "${{ matrix.arch }}"
       - name: Screenshot smoke test
         env:
           SDL_VIDEODRIVER: dummy
@@ -158,9 +165,17 @@ jobs:
           test -s smoke.bmp
       - name: Package
         run: cd build && cpack
-      - uses: actions/upload-artifact@v4
+      - name: Open the .dmg and run the app from it
+        env:
+          SDL_VIDEODRIVER: dummy
+        run: |
+          hdiutil attach build/*.dmg -mountpoint /tmp/curl-ui-dmg -nobrowse
+          "/tmp/curl-ui-dmg/curl UI.app/Contents/MacOS/curl UI" --docs location --screenshot "$PWD/dmg.bmp"
+          test -s dmg.bmp
+          hdiutil detach /tmp/curl-ui-dmg
+      - uses: actions/upload-artifact@v7
         with:
-          name: curl-ui-macos
+          name: curl-ui-macos-${{ matrix.name }}
           path: build/*.dmg
           if-no-files-found: error
 
@@ -171,7 +186,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
       - name: Create the release
