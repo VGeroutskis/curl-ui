@@ -19,7 +19,8 @@ void view_tabs(app_t *a, struct nk_rect r)
 {
   const palette *p = &a->pal;
   struct nk_command_buffer *cv = nk_window_get_canvas(a->ctx);
-  float w = (r.w - PLUS_W - 8) / (float)a->ntabs;
+  float vars_w = a->show_vars ? 100.0f : 0.0f;
+  float w = (r.w - PLUS_W - 8 - vars_w) / (float)a->ntabs;
   float x = r.x;
   char title[128];
   int i, close = -1;
@@ -32,7 +33,7 @@ void view_tabs(app_t *a, struct nk_rect r)
     const tab_t *t = a->tabs[i];
     struct nk_rect box = nk_rect(x, r.y, w, r.h);
     struct nk_rect del = nk_rect(x + w - 22, r.y + (r.h - 18) / 2, 18, 18);
-    int current = i == a->cur;
+    int current = i == a->cur && !a->show_vars;
     int hover = ui_hover(a, box);
     float tx = x + 10;
     if(current || hover)
@@ -60,13 +61,22 @@ void view_tabs(app_t *a, struct nk_rect r)
       a->cursor = CURSOR_HAND;
       if(ui_clicked(a, box) && !current) {
         a->cur = i;
+        a->show_vars = 0;
         a->pending_unfocus = 1;
       }
     }
     x += w;
   }
-  if(ui_button(a, nk_rect(x + 4, r.y + 3, PLUS_W - 4, r.h - 6), "+", BTN_GHOST) && tab_new(a) >= 0)
+  if(a->show_vars) {
+    ui_rect(a, nk_rect(x, r.y, vars_w, r.h - 1), 0, p->card);
+    nk_fill_rect(cv, nk_rect(x, r.y + r.h - 2, vars_w, 2), 0, p->accent);
+    ui_text_fit(a, a->f.small, x + 10, r.y, r.h, vars_w - 20, "Variables", p->text);
+    x += vars_w;
+  }
+  if(ui_button(a, nk_rect(x + 4, r.y + 3, PLUS_W - 4, r.h - 6), "+", BTN_GHOST) && tab_new(a) >= 0) {
+    a->show_vars = 0;
     a->pending_unfocus = 1;
+  }
   if(close >= 0)
     tab_close(a, close);
 }

@@ -13,6 +13,7 @@
 #include "options.h"
 #include "outbuf.h"
 #include "settings.h"
+#include "vars.h"
 #include "procrun.h"
 
 typedef struct {
@@ -81,7 +82,9 @@ typedef struct {
 typedef struct {
   request req;
   int method;           /* index into the method menu; 0 lets curl decide */
-  arg_list args;
+  arg_list args_tmpl;   /* with {{name}} */
+  arg_list args_real;   /* what curl gets */
+  arg_list args;        /* what is on screen: secrets hidden, tokens parallel to the others */
   int dirty;            /* differs from what is saved */
   int run_at_start;     /* scripted: --run */
 
@@ -115,6 +118,8 @@ typedef struct {
 } tab_t;
 
 #define CUR(a) ((a)->tabs[(a)->cur])
+
+typedef enum { MODAL_NONE, MODAL_SAVE, MODAL_CANCEL, MODAL_OPEN_VARS } modal_action;
 
 typedef struct {
   /* platform */
@@ -158,6 +163,29 @@ typedef struct {
   int sel_scratch[512];
 
   int show_settings;
+
+  /* variables */
+  var_store vars;
+  char vars_path[SETTINGS_PATH_CAP];
+  unsigned long vars_hash;
+  int show_vars;
+  float vars_scroll;
+  int vars_focus;
+  int env_menu;
+  struct nk_rect env_btn;
+  char env_edit[128];
+  int env_edit_for;
+  int env_editing;
+  int env_del_armed;
+  char notice[2048];    /* something the user should know, until dismissed */
+
+  /* the prompt for missing variables */
+  int modal_open;
+  modal_action modal_pending;
+  str_list modal_names;
+  char **modal_values;
+  size_t *modal_caps;
+  int *modal_secret;
 
   /* docs */
   int doc_opt;
@@ -254,6 +282,23 @@ void ui_install_paste(app_t *a);
 void ui_hover_doc(app_t *a, int opt);
 size_t utf8_next(const char *s, size_t len, size_t i);
 void ui_copy(const char *text);
+
+/* The eye of a secret. Returns 1 when clicked. */
+int ui_eye(app_t *a, struct nk_rect r, int open);
+
+/* view_modal.c, view_vars.c */
+void modal_open_missing(app_t *a, str_list *names);  /* takes names */
+void modal_close(app_t *a);
+void modal_act(app_t *a, modal_action act);
+void view_modal(app_t *a);
+void view_vars(app_t *a, struct nk_rect r);
+void app_vars_save(app_t *a);
+void app_vars_autosave(app_t *a);
+struct nk_rect env_menu_rect(app_t *a);
+int env_menu_item_at(app_t *a, struct nk_vec2 pos);
+void env_menu_pick(app_t *a, int item);
+void env_menu_draw(app_t *a);
+void app_notice(app_t *a, const char *text);
 
 /* views */
 void view_frame(app_t *a);

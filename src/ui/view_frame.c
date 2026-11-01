@@ -81,12 +81,29 @@ void view_header(app_t *a, struct nk_rect r)
       if(ui_clicked(a, pill)) {
         nk_edit_unfocus(a->ctx);
         a->show_settings = !a->show_settings;
+        a->show_vars = 0;
       }
       {
         struct nk_rect gear = nk_rect(pill.x - 8 - 76, cy - 13, 76, 26);
         if(ui_button(a, gear, "Settings", a->show_settings ? BTN_PRIMARY : BTN_SECONDARY)) {
           nk_edit_unfocus(a->ctx);
           a->show_settings = !a->show_settings;
+          a->show_vars = 0;
+        }
+        /* the environment: variables take their values from it */
+        a->env_btn = nk_rect(gear.x - 8 - 170, cy - 13, 170, 26);
+        {
+          struct nk_rect e = a->env_btn;
+          int he = ui_hover(a, e);
+          float ax = e.x + e.w - 16, ay = cy - 2;
+          ui_rect(a, e, 5, he ? p->hover : p->bg);
+          ui_stroke(a, e, 5, a->show_vars ? p->accent : p->border);
+          ui_text_fit(a, a->f.small, e.x + 9, e.y, e.h, e.w - 30, a->vars.e[a->vars.active].name, p->text);
+          nk_fill_triangle(cv, ax - 4, ay, ax + 4, ay, ax, ay + 5, p->dim);
+          if(he)
+            a->cursor = CURSOR_HAND;
+          if(ui_clicked(a, e))
+            a->env_menu = !a->env_menu;
         }
       }
     }
@@ -104,7 +121,10 @@ void view_frame(app_t *a)
   struct nk_input *in = &ctx->input;
   struct nk_vec2 saved_pos = in->mouse.pos;
   struct nk_mouse_button saved_left = in->mouse.buttons[NK_BUTTON_LEFT];
+  struct nk_vec2 saved_scroll = in->mouse.scroll_delta;
   int menu_was_open = CUR(a)->method_menu;
+  int env_was_open = a->env_menu;
+  int modal_was_open = a->modal_open;
 
   a->big_paste = 0;
   a->cursor = CURSOR_ARROW;
@@ -117,13 +137,19 @@ void view_frame(app_t *a)
   /* The popup goes first and takes the input, so nothing below reacts. */
   if(a->show_settings)
     CUR(a)->method_menu = menu_was_open = 0;
-  if(menu_was_open) {
+  if(modal_was_open)
+    menu_was_open = env_was_open = CUR(a)->method_menu = a->env_menu = 0;
+  if(menu_was_open || env_was_open || modal_was_open) {
     const struct nk_mouse_button *b = &in->mouse.buttons[NK_BUTTON_LEFT];
-    if(b->clicked && !b->down) {
+    if(menu_was_open && b->clicked && !b->down) {
       int item = center_menu_item_at(a, center, in->mouse.pos);
       if(item >= 0)
         CUR(a)->method = item;
       CUR(a)->method_menu = 0;
+    }
+    if(env_was_open && b->clicked && !b->down) {
+      env_menu_pick(a, env_menu_item_at(a, in->mouse.pos));
+      a->env_menu = 0;
     }
     in->mouse.pos = nk_vec2(-1000, -1000);
     in->mouse.buttons[NK_BUTTON_LEFT].clicked = 0;
@@ -141,8 +167,21 @@ void view_frame(app_t *a)
     view_tabs(a, nk_rect(0, HEADER_H, a->W, TABS_H));
     /* draw order is nk_edit identity: fixed edits come before the card list */
     view_library(a, nk_rect(0, top, lib_w, a->H - top));
+    if(a->notice[0]) {
+      const palette *p = &a->pal;
+      struct nk_rect bar = nk_rect(center.x, center.y, center.w, 30);
+      ui_push_clip(a, bar);
+      ui_rect(a, bar, 0, p->amber_bg);
+      ui_text_fit(a, a->f.small, bar.x + 12, bar.y, bar.h, bar.w - 80, a->notice, p->amber);
+      if(ui_button(a, nk_rect(bar.x + bar.w - 66, bar.y + 3, 60, 24), "Dismiss", BTN_GHOST))
+        a->notice[0] = '\0';
+      center.y += 30;
+      center.h -= 30;
+    }
     if(a->show_settings)
       view_settings(a, center);
+    else if(a->show_vars)
+      view_vars(a, center);
     else
       view_center(a, center);
     view_docs(a, nk_rect(a->W - doc_w, top, doc_w, a->H - top));
@@ -150,9 +189,24 @@ void view_frame(app_t *a)
       in->mouse.pos = saved_pos;
       center_draw_menu(a, center);
     }
+    if(env_was_open && a->env_menu) {
+      in->mouse.pos = saved_pos;
+      env_menu_draw(a);
+    }
+    if(modal_was_open && a->modal_open) {
+      in->mouse.pos = saved_pos;
+      in->mouse.buttons[NK_BUTTON_LEFT] = saved_left;
+      in->mouse.scroll_delta = saved_scroll;
+      view_modal(a);
+    }
     nk_layout_space_end(ctx);
   }
   nk_end(ctx);
+  if(a->modal_pending != MODAL_NONE) {
+    modal_action act = a->modal_pending;
+    a->modal_pending = MODAL_NONE;
+    modal_act(a, act);
+  }
   /* Blanking was for this frame's widgets only. Left blanked, the release of
      a held button would look like no change, and Nuklear would drop it. */
   in->mouse.pos = saved_pos;

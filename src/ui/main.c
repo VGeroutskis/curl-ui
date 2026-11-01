@@ -183,7 +183,7 @@ static void frame(app_t *a)
 
 /* ---- scripted test hooks ---- */
 
-typedef enum { SC_MOUSE, SC_CLICK, SC_PASTE, SC_SELECT_TAB, SC_CLOSE_TAB, SC_TYPE, SC_WHEEL } script_kind;
+typedef enum { SC_MOUSE, SC_CLICK, SC_PASTE, SC_MODAL_VALUE, SC_MODAL_ACTION, SC_SELECT_TAB, SC_CLOSE_TAB, SC_TYPE, SC_WHEEL } script_kind;
 typedef struct {
   script_kind kind;
   int x, y, dy;
@@ -298,6 +298,28 @@ static void run_script(app_t *a, const script_op *ops, int n)
       input_frame(a, feed_wheel, op);
       settle(a);
       break;
+    case SC_MODAL_VALUE: {
+      const char *eq = strchr(op->text, '=');
+      int m;
+      for(m = 0; eq && a->modal_open && m < a->modal_names.n; m++) {
+        if(strlen(a->modal_names.s[m]) == (size_t)(eq - op->text) &&
+           !memcmp(a->modal_names.s[m], op->text, (size_t)(eq - op->text))) {
+          size_t need = strlen(eq + 1) + 1;
+          if(need > a->modal_caps[m]) {
+            a->modal_values[m] = realloc(a->modal_values[m], need);
+            a->modal_caps[m] = need;
+          }
+          memcpy(a->modal_values[m], eq + 1, need);
+        }
+      }
+      settle(a);
+      break;
+    }
+    case SC_MODAL_ACTION:
+      if(a->modal_open)
+        modal_act(a, !strcmp(op->text, "save") ? MODAL_SAVE : !strcmp(op->text, "open") ? MODAL_OPEN_VARS : MODAL_CANCEL);
+      settle(a);
+      break;
     case SC_SELECT_TAB:
       if(op->x >= 0 && op->x < a->ntabs)
         a->cur = op->x;
@@ -354,6 +376,14 @@ static int write_dump(app_t *a, const char *path)
     fprintf(f, "exit=%d\nhad_result=%d\nhttp=%d\nstats=%d\nsize=%lld\nurl_missing=%d\n", CUR(a)->exit_code, CUR(a)->has_result,
             CUR(a)->http_status, CUR(a)->has_stats, CUR(a)->curl_size, CUR(a)->url_missing);
     fprintf(f, "listed=%d\nhidden=%d\ntabs=%d\ncur=%d\n", a->nresults, a->nhidden, a->ntabs, a->cur);
+    fprintf(f, "env=%s\nshow_vars=%d\nnotice=%s\nmodal=%d\nmodal_missing=", a->vars.e[a->vars.active].name, a->show_vars,
+            a->notice, a->modal_open);
+    for(i = 0; i < a->modal_names.n; i++)
+      fprintf(f, "%s%s", i ? "," : "", a->modal_names.s[i]);
+    fputs("\nmodal_secret=", f);
+    for(i = 0; i < a->modal_names.n; i++)
+      fprintf(f, "%s%d", i ? "," : "", a->modal_secret[i]);
+    fputc('\n', f);
     fprintf(f, "command=%s\n---stdout---\n%s\n---log---\n%s\n", cmd ? cmd : "", out ? out : "", log ? log : "");
     for(i = 0; i < a->ntabs; i++) {
       char *text = outbuf_join(a->tabs[i]->out, NULL);
@@ -464,6 +494,11 @@ int main(int argc, char **argv)
       args_remove_stale(dir);
     }
     settings_load(&a->set, a->settings_path);
+    if(!settings_path(settings_dir, "variables.json", a->vars_path, sizeof(a->vars_path))) {
+      char err[4096];
+      if(vars_load(&a->vars, a->vars_path, err, sizeof(err)))
+        app_notice(a, err);
+    }
     settings_path(settings_dir, "last-request.txt", request_path, sizeof(request_path));
     if(a->set.remember && !have_cli_request)
       request_load(&CUR(a)->req, &CUR(a)->method, request_path);
@@ -574,6 +609,35 @@ int main(int argc, char **argv)
         fprintf(stderr, "too many tabs\n");
         return 2;
       }
+    }
+    else if(!strcmp(arg, "--var") || !strcmp(arg, "--secret")) {
+      const char *v = NEXT();
+      const char *eq = strchr(v, '=');
+      char name[VAR_NAME_CAP];
+      if(!eq) {
+        fprintf(stderr, "%s wants NAME=VALUE\n", arg);
+        return 2;
+      }
+      snprintf(name, sizeof(name), "%.*s", (int)(eq - v), v);
+      var_set(&a->vars.e[a->vars.active], name, eq + 1, arg[2] == 's');
+    }
+    else if(!strcmp(arg, "--env")) {
+      const char *name = NEXT();
+      int k, found = -1;
+      for(k = 0; k < a->vars.n; k++)
+        if(!strcmp(a->vars.e[k].name, name))
+          found = k;
+      if(found < 0)
+        found = env_add(&a->vars, name);
+      if(found >= 0)
+        a->vars.active = found;
+    }
+    else if(!strcmp(arg, "--open-vars"))
+      a->show_vars = 1;
+    else if((!strcmp(arg, "--modal-value") || !strcmp(arg, "--modal-action")) && nops < MAX_SCRIPT) {
+      script_op *op = &ops[nops++];
+      op->kind = arg[8] == 'v' ? SC_MODAL_VALUE : SC_MODAL_ACTION;
+      op->text = NEXT();
     }
     else if(!strcmp(arg, "--no-wait"))
       no_wait = 1;
@@ -792,7 +856,7 @@ int main(int argc, char **argv)
       }
       if(ev.type == SDL_QUIT)
         a->quit = 1;
-      if(ev.type == SDL_KEYDOWN && (ev.key.keysym.mod & (KMOD_CTRL | KMOD_GUI))) {
+      if(ev.type == SDL_KEYDOWN && (ev.key.keysym.mod & (KMOD_CTRL | KMOD_GUI)) && !a->modal_open) {
         if(ev.key.keysym.sym == SDLK_t && tab_new(a) >= 0)
           a->pending_unfocus = 1;
         else if(ev.key.keysym.sym == SDLK_w)
@@ -836,6 +900,7 @@ int main(int argc, char **argv)
   if(a->settings_path[0]) {
     SDL_GetWindowSize(g_window, &a->set.win_w, &a->set.win_h);
     settings_save(&a->set, a->settings_path);
+    app_vars_autosave(a);
     if(a->set.remember)
       request_save(&CUR(a)->req, CUR(a)->method, request_path);
     else

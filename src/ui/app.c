@@ -76,6 +76,8 @@ static void tab_free(tab_t *t)
   if(t->proc)
     proc_free(t->proc);
   args_files_remove(&t->run_files);
+  arg_list_free(&t->args_tmpl);
+  arg_list_free(&t->args_real);
   arg_list_free(&t->args);
   outbuf_free(t->out);
   outbuf_free(t->log);
@@ -134,6 +136,8 @@ void app_init(app_t *a)
 {
   memset(a, 0, sizeof(*a));
   settings_defaults(&a->set);
+  vars_init(&a->vars);
+  a->env_edit_for = -1;
   tab_new(a);
   a->results = malloc(sizeof(int) * (size_t)g_option_count);
   a->doc_opt = -1;
@@ -149,6 +153,8 @@ void app_free(app_t *a)
   for(i = 0; i < a->ntabs; i++)
     tab_free(a->tabs[i]);
   a->ntabs = 0;
+  modal_close(a);
+  vars_free(&a->vars);
   free(a->dops);
   free(a->doc_arena);
   docs_free(&a->doc);
@@ -169,11 +175,20 @@ int app_option_supported(const app_t *a, int opt)
 
 void app_rebuild_args(app_t *a)
 {
+  arg_list_free(&CUR(a)->args_tmpl);
+  arg_list_free(&CUR(a)->args_real);
   arg_list_free(&CUR(a)->args);
   CUR(a)->req.no_curlrc = a->set.no_curlrc;
   CUR(a)->req.config_file = a->set.config_file;
   snprintf(CUR(a)->req.method, sizeof(CUR(a)->req.method), "%s", method_names[CUR(a)->method]);
-  builder_build(&CUR(a)->req, a->set.program[0] ? a->set.program : "curl", &CUR(a)->args);
+  if(builder_build(&CUR(a)->req, a->set.program[0] ? a->set.program : "curl", &CUR(a)->args_tmpl))
+    return;
+  vars_apply(&a->vars.e[a->vars.active], &CUR(a)->args_tmpl, &CUR(a)->args_real, &CUR(a)->args);
+}
+
+void app_notice(app_t *a, const char *text)
+{
+  snprintf(a->notice, sizeof(a->notice), "%s", text);
 }
 
 void app_add_option(app_t *a, const char *name, const char *value)
@@ -297,6 +312,17 @@ void app_run(app_t *a)
     CUR(a)->out_tab = TAB_RESPONSE;
     return;
   }
+  /* nothing leaves until every variable has a value */
+  {
+    str_list missing;
+    if(vars_missing(&a->vars.e[a->vars.active], &CUR(a)->args_tmpl, &missing))
+      return;
+    if(missing.n) {
+      modal_open_missing(a, &missing);
+      return;
+    }
+    str_list_free(&missing);
+  }
 
   have_v = request_find(&CUR(a)->req, options_find("verbose")) >= 0 ||
            request_find(&CUR(a)->req, options_find("trace")) >= 0 ||
@@ -321,7 +347,7 @@ void app_run(app_t *a)
   }
   extra[n] = NULL;
 
-  argv = arg_list_argv(&CUR(a)->args, extra);
+  argv = arg_list_argv(&CUR(a)->args_real, extra);
   if(!argv)
     return;
   if(args_need_file(argv)) {
@@ -333,13 +359,13 @@ void app_run(app_t *a)
     free((void *)argv);
     argv = NULL;
     run_file_stem(a, stem, sizeof(stem));
-    if(!args_spill_bodies(&CUR(a)->args, stem, &CUR(a)->run_files, err, sizeof(err))) {
-      argv = arg_list_argv(&CUR(a)->args, extra);
+    if(!args_spill_bodies(&CUR(a)->args_real, stem, &CUR(a)->run_files, err, sizeof(err))) {
+      argv = arg_list_argv(&CUR(a)->args_real, extra);
       if(argv && args_need_file(argv)) {
         free((void *)argv);
         argv = NULL;
         snprintf(conf, sizeof(conf), "%s.conf", stem);
-        if(!args_write_config(&CUR(a)->args, conf, line_max, err, sizeof(err))) {
+        if(!args_write_config(&CUR(a)->args_real, conf, line_max, err, sizeof(err))) {
           char **grown = realloc(CUR(a)->run_files.paths, sizeof(char *) * (size_t)(CUR(a)->run_files.n + 1));
           size_t cn = strlen(conf) + 1;
           char *copy = malloc(cn);
@@ -348,10 +374,10 @@ void app_run(app_t *a)
           if(grown && copy) {
             memcpy(copy, conf, cn);
             CUR(a)->run_files.paths[CUR(a)->run_files.n++] = copy;
-            short_argv[m++] = CUR(a)->args.tok[0].text;
-            if(CUR(a)->args.count > 1 && CUR(a)->args.tok[1].kind == TOK_FLAG &&
-               CUR(a)->args.tok[1].opt == options_find("disable"))
-              short_argv[m++] = CUR(a)->args.tok[1].text;
+            short_argv[m++] = CUR(a)->args_real.tok[0].text;
+            if(CUR(a)->args_real.count > 1 && CUR(a)->args_real.tok[1].kind == TOK_FLAG &&
+               CUR(a)->args_real.tok[1].opt == options_find("disable"))
+              short_argv[m++] = CUR(a)->args_real.tok[1].text;
             short_argv[m++] = "--config";
             short_argv[m++] = copy;
             for(k = 0; k < n; k++)

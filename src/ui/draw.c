@@ -336,6 +336,23 @@ nk_flags ui_edit_dyn(app_t *a, struct nk_rect r, char **buf, size_t *cap, const 
   return state;
 }
 
+int ui_eye(app_t *a, struct nk_rect r, int open)
+{
+  const palette *p = &a->pal;
+  struct nk_command_buffer *cv = nk_window_get_canvas(a->ctx);
+  int hover = ui_hover(a, r);
+  struct nk_color c = hover ? p->text : p->dim;
+  float cx = r.x + r.w / 2, cy = r.y + r.h / 2, hw = 8, hh = 6;
+  nk_stroke_curve(cv, cx - hw, cy, cx - 4, cy - hh, cx + 4, cy - hh, cx + hw, cy, 1.2f, c);
+  nk_stroke_curve(cv, cx - hw, cy, cx - 4, cy + hh, cx + 4, cy + hh, cx + hw, cy, 1.2f, c);
+  nk_fill_circle(cv, nk_rect(cx - 2.5f, cy - 2.5f, 5, 5), c);
+  if(!open)
+    nk_stroke_line(cv, cx - hw, cy + hh, cx + hw, cy - hh, 1.4f, c);
+  if(hover)
+    a->cursor = CURSOR_HAND;
+  return ui_clicked(a, r);
+}
+
 void ui_hover_doc(app_t *a, int opt)
 {
   a->hover_frame = opt;

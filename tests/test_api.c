@@ -8,6 +8,8 @@
 #include "json.h"
 #include "options.h"
 #include "settings.h"
+#include "urlquery.h"
+#include "vars.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -328,6 +330,170 @@ static void test_args_spill_bodies(void)
   free(at);
 }
 
+static arg_list one_arg_request(const char *url, const char *header)
+{
+  request r;
+  arg_list l;
+  request_init(&r);
+  if(url)
+    request_set_url(&r, url);
+  if(header)
+    request_set_value(request_add(&r, options_find("header")), 0, header);
+  builder_build(&r, "curl", &l);
+  request_free(&r);
+  return l;
+}
+
+static void test_pct_encode(void)
+{
+  char *s = pct_encode("a b&c=d/e~f.g-h_i");
+  CHECK_STR(s, "a%20b%26c%3Dd%2Fe~f.g-h_i");
+  free(s);
+  s = pct_encode("\xCE\xBA");
+  CHECK_STR(s, "%CE%BA");
+  free(s);
+}
+
+static void test_vars_names(void)
+{
+  CHECK(vars_name_ok("a_b-c.1"));
+  CHECK(!vars_name_ok("a b"));
+  CHECK(!vars_name_ok(""));
+  CHECK(!vars_name_ok("\"a\":1"));
+  CHECK(vars_suggest_secret("API_Token"));
+  CHECK(vars_suggest_secret("db_PASSWORD"));
+  CHECK(vars_suggest_secret("authHeader"));
+  CHECK(!vars_suggest_secret("base"));
+}
+
+static void test_vars_missing(void)
+{
+  var_store st;
+  arg_list l = one_arg_request("http://x/{{a}}", "X: {{b}} {{a}} {{\"not\":1}} {{bad name}}");
+  str_list m;
+  int second;
+  vars_init(&st);
+  CHECK(st.n == 1);
+  CHECK_STR(st.e[0].name, "Default");
+  var_set(&st.e[0], "b", "1", 0);
+  CHECK(vars_missing(&st.e[st.active], &l, &m) == 0);
+  CHECK(m.n == 1);
+  CHECK_STR(m.s[0], "a");
+  str_list_free(&m);
+  /* changing the environment changes what is missing */
+  second = env_add(&st, "Other");
+  CHECK(second == 1);
+  var_set(&st.e[second], "a", "1", 0);
+  st.active = second;
+  vars_missing(&st.e[st.active], &l, &m);
+  CHECK(m.n == 1);
+  CHECK_STR(m.s[0], "b");
+  str_list_free(&m);
+  arg_list_free(&l);
+  vars_free(&st);
+}
+
+static void test_vars_apply(void)
+{
+  var_store st;
+  var_env *e;
+  arg_list l, real, shown;
+  char *big;
+  vars_init(&st);
+  e = &st.e[0];
+  var_set(e, "base", "https://h/api", 0);
+  var_set(e, "v", "a b&c", 0);
+  var_set(e, "t", "s3cret", 1);
+  var_set(e, "nested", "{{v}}", 0);
+  l = one_arg_request("{{base}}/p?q={{v}}&s={{t}}#{{v}}", "A: {{t}} {{nested}} {{\"x\":1}}");
+  CHECK(vars_apply(e, &l, &real, &shown) == 0);
+  CHECK(real.count == l.count && shown.count == l.count);
+  /* query values are encoded; before ? and after # they go in as they are */
+  CHECK_STR(real.tok[real.count - 1].text, "https://h/api/p?q=a%20b%26c&s=s3cret#a b&c");
+  CHECK_STR(shown.tok[shown.count - 1].text, "https://h/api/p?q=a%20b%26c&s=********#a b&c");
+  CHECK_STR(real.tok[2].text, "A: s3cret {{v}} {{\"x\":1}}");
+  CHECK_STR(shown.tok[2].text, "A: ******** {{v}} {{\"x\":1}}");
+  CHECK(real.tok[2].kind == TOK_VALUE && shown.tok[2].opt == l.tok[2].opt);
+  arg_list_free(&real);
+  arg_list_free(&shown);
+  arg_list_free(&l);
+  /* a value past any fixed buffer arrives whole */
+  big = filled(100 * 1024, 'q');
+  var_set(e, "big", big, 0);
+  l = one_arg_request("http://x/", "X: {{big}}");
+  CHECK(vars_apply(e, &l, &real, &shown) == 0);
+  CHECK(strlen(real.tok[2].text) == 100 * 1024 + 3);
+  arg_list_free(&real);
+  arg_list_free(&shown);
+  arg_list_free(&l);
+  /* a missing name stays visible, it is never sent blank */
+  l = one_arg_request("http://x/{{nope}}", NULL);
+  CHECK(vars_apply(e, &l, &real, &shown) == 0);
+  CHECK_STR(real.tok[real.count - 1].text, "http://x/{{nope}}");
+  arg_list_free(&real);
+  arg_list_free(&shown);
+  arg_list_free(&l);
+  free(big);
+  vars_free(&st);
+}
+
+static void test_vars_store(void)
+{
+  char path[1024], err[2048], moved[1100];
+  var_store a, b;
+  size_t len;
+  char *got;
+  int i;
+  snprintf(path, sizeof(path), "%s/variables.json", g_dir);
+  remove(path);
+  vars_init(&a);
+  CHECK(vars_load(&a, path, err, sizeof(err)) == 0);  /* nothing there yet is fine */
+  CHECK(a.n == 1);
+  var_set(&a.e[0], "one", "1", 0);
+  var_set(&a.e[0], "tok", "\xCE\xBA \"q\"", 1);
+  var_set(&a.e[0], "tok", "changed", 1);
+  CHECK(a.e[0].n == 2);
+  i = env_add(&a, "Prod");
+  var_set(&a.e[i], "one", "p", 0);
+  a.active = i;
+  CHECK(env_add(&a, "Prod") == -1);
+  CHECK(env_add(&a, "") == -1);
+  CHECK(vars_save(&a, path) == 0);
+  vars_init(&b);
+  CHECK(vars_load(&b, path, err, sizeof(err)) == 0);
+  CHECK(b.n == 2 && b.active == 1);
+  CHECK_STR(b.e[1].name, "Prod");
+  CHECK_STR(var_find(&b.e[0], "tok")->value, "changed");
+  CHECK(var_find(&b.e[0], "tok")->secret == 1);
+  CHECK(var_find(&b.e[0], "one")->secret == 0);
+  vars_free(&b);
+  /* copy, rename and removal; the last one stays */
+  i = env_copy(&a, 0, "Copy");
+  CHECK(i == 2 && a.e[2].n == 2);
+  CHECK(env_rename(&a, 2, "Prod") == -1);
+  CHECK(env_rename(&a, 2, "Stage") == 0);
+  CHECK(env_remove(&a, 2) == 0);
+  CHECK(env_remove(&a, 1) == 0);
+  CHECK(a.n == 1 && a.active == 0);
+  CHECK(env_remove(&a, 0) == -1);
+  vars_free(&a);
+  /* a damaged file is kept aside, and the store starts over */
+  CHECK(file_write_private(path, "{ not json", 10) == 0);
+  vars_init(&b);
+  err[0] = '\0';
+  CHECK(vars_load(&b, path, err, sizeof(err)) == -1);
+  CHECK(strstr(err, ".bad-") != NULL);
+  CHECK(b.n == 1);
+  CHECK_STR(b.e[0].name, "Default");
+  CHECK(file_read_all(path, &len, 64) == NULL);
+  snprintf(moved, sizeof(moved), "%s.bad-1", path);
+  got = file_read_all(moved, &len, 64);
+  CHECK(got != NULL);
+  free(got);
+  remove(moved);
+  vars_free(&b);
+}
+
 static void test_args_remove_stale(void)
 {
   char a[1024], b[1024];
@@ -358,6 +524,11 @@ int main(int argc, char **argv)
   test_args_write_config();
   test_args_spill_bodies();
   test_args_remove_stale();
+  test_pct_encode();
+  test_vars_names();
+  test_vars_missing();
+  test_vars_apply();
+  test_vars_store();
   printf("%d checks, %d failed\n", g_checks, g_fail);
   return g_fail ? 1 : 0;
 }

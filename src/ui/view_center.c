@@ -448,7 +448,7 @@ static void draw_command(app_t *a, struct nk_rect r)
   ui_stroke(a, r, 7, p->border);
   ui_text_fit(a, a->f.semi, r.x + 12, r.y + 6, 20, 120, "Command", p->text);
   if(ui_button(a, copy, "Copy", BTN_SECONDARY)) {
-    char *prev = builder_preview(&CUR(a)->args);
+    char *prev = builder_preview(&CUR(a)->args_real);
     if(prev) {
       ui_copy(prev);
       free(prev);
