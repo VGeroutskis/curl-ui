@@ -8,6 +8,8 @@ re-implements nothing.
 curl UI is an independent project and is not part of curl. The curl program is
 not included: packages depend on it, and the app uses the one on your system.
 
+![curl UI: the option library, a request with its exact command and response, and curl's documentation for the option in focus](docs/screenshots/main.png)
+
 ## Install
 
 Download from the [releases page](../../releases), where `SHA256SUMS` lists the
@@ -24,8 +26,10 @@ checksums, or from the artifacts of the `curl-ui` workflow run:
 | macOS Apple Silicon | `curl-ui-*-macos-apple-silicon.dmg` | drag to Applications |
 | macOS Intel | `curl-ui-*-macos-intel.dmg` | drag to Applications |
 
-The builds are not code signed. Windows SmartScreen and macOS Gatekeeper warn
-the first time; on macOS use right click, Open.
+The builds are not code signed, so Windows SmartScreen and macOS Gatekeeper warn
+the first time. On Windows choose More info, Run anyway. On macOS 15 and later,
+try to open the app, then choose Open Anyway in System Settings, Privacy & Security;
+on older versions use right click, Open.
 
 curl itself must be installed. Windows 10 and later and macOS include it. If
 it is not on `PATH`, click the version pill in the header and enter its path.
@@ -50,6 +54,10 @@ To fill the Log tab and the status chips, a run also passes `--verbose`,
 yourself. The Log says so on its first line, and they are not in the command you
 copy. The rest of the command is exactly what is executed, as an argument array
 with no shell. This can be turned off in Settings.
+
+| Only what combines, or everything with the reason | The verbose log, in the light theme |
+|---|---|
+| ![The option list with Show all on, marking options that do not combine with --http2](docs/screenshots/combine.png) | ![The Log tab of a finished request in the light theme](docs/screenshots/light-log.png) |
 
 ## Settings
 
