@@ -94,6 +94,7 @@ static const char *good_value(const opt_def *o)
     /* --stderr opens its file during the parse */
     { "stderr", SCRATCH },
     { "limit-rate", "100K" },
+    { "upload-flags", "answered,seen" },
     { NULL, NULL }
   };
   int i;
@@ -219,6 +220,12 @@ static void check_curl_form(const char *curl, const curl_info *ci, const opt_def
   }
   if(exits_by_itself(o)) {
     (*accepted)++;
+    return;
+  }
+  /* some options only gained their --no- form in later versions */
+  if(negated && strstr(g_cap.err, "isn't a boolean") && !curlinfo_at_least(ci, 8, 0)) {
+    (*not_in_curl)++;
+    printf("note --%s is not in this older curl\n", flagname);
     return;
   }
   {

@@ -13,8 +13,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_DOCS = os.path.join(HERE, "..", "..", "docs", "cmdline-opts")
 DEFAULT_OUT = os.path.join(HERE, "..", "src", "core", "options_data.c")
 EXAMPLE_URL = "https://example.com"
-# The docs' example needs a newer curl than many people have.
-PLACEHOLDERS = {"limit-rate": "e.g. 100K"}
+# Where the docs' example does not work: --limit-rate 123.45K needs a newer curl
+# than many people have, and curl rejects --upload-flags Flagged,!Seen outright.
+PLACEHOLDERS = {"limit-rate": "e.g. 100K", "upload-flags": "e.g. answered,seen"}
 KINDS = {
     "single": "OPT_KIND_SINGLE",
     "boolean": "OPT_KIND_BOOLEAN",

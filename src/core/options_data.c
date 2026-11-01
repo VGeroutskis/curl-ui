@@ -7081,7 +7081,7 @@ const opt_def g_options[] = {
 { "upload-flags", "", "<flags>", "IMAP upload behavior",
   "curl output imap upload", "IMAP", "8.13.0",
   OPT_KIND_SINGLE, "", 0, 0,
-  NULL, see_266, ex_266, "e.g. Flagged,!Seen",
+  NULL, see_266, ex_266, "e.g. answered,seen",
   "Specify additional behavior to apply to uploaded files. Flags are\n"
     "specified as either a single flag value or a comma-separated list\n"
     "of flag values. These values are case-sensitive and may be negated\n"
