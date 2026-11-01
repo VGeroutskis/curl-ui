@@ -384,6 +384,10 @@ static int write_dump(app_t *a, const char *path)
     form_params_sync(CUR(a));
     for(i = 0; i < CUR(a)->params.n; i++)
       fprintf(f, "param=%s:%s\n", CUR(a)->params.r[i].key, CUR(a)->params.r[i].value);
+    {
+      static const char *const body_names[] = { "none", "raw", "json", "form-data", "urlencoded", "file", "options" };
+      fprintf(f, "body_kind=%s\n", body_names[form_body_kind(&CUR(a)->req)]);
+    }
     fprintf(f, "env=%s\nshow_vars=%d\nnotice=%s\nmodal=%d\nmodal_missing=", a->vars.e[a->vars.active].name, a->show_vars,
             a->notice, a->modal_open);
     for(i = 0; i < a->modal_names.n; i++)
@@ -651,6 +655,54 @@ int main(int argc, char **argv)
       for(k = 0; k < FORM_COUNT; k++)
         if(!strcmp(names[k], v))
           CUR(a)->form = (form_kind)k;
+    }
+    else if(!strcmp(arg, "--set-auth")) {
+      const char *kind = NEXT();
+      const char *x = NEXT();
+      const char *y = NEXT();
+      char err[128];
+      auth_kind k = !strcmp(kind, "basic") ? AUTH_BASIC : !strcmp(kind, "bearer") ? AUTH_BEARER :
+                    !strcmp(kind, "digest") ? AUTH_DIGEST : !strncmp(kind, "apikey", 6) ? AUTH_APIKEY : AUTH_NONE;
+      if(form_auth_set(&CUR(a)->req, &CUR(a)->hints, k, x, y, !strcmp(kind, "apikey-query") ? "query" : "header", err,
+                       sizeof(err))) {
+        fprintf(stderr, "--set-auth: %s\n", err);
+        return 2;
+      }
+    }
+    else if(!strcmp(arg, "--set-header")) {
+      const char *v = NEXT();
+      const char *c = strchr(v, ':');
+      kv_list rows;
+      char name[256];
+      form_headers_get(&CUR(a)->req, &CUR(a)->hints, &rows);
+      snprintf(name, sizeof(name), "%.*s", c ? (int)(c - v) : (int)strlen(v), v);
+      kv_add(&rows, name, c ? c + 2 : "", 1);
+      form_headers_set(&CUR(a)->req, &CUR(a)->hints, &rows);
+      kv_free(&rows);
+    }
+    else if(!strcmp(arg, "--set-body")) {
+      /* raw, json and file take the text; urlencoded and form-data take a=b&c=d */
+      const char *kind = NEXT();
+      const char *v = NEXT();
+      char err[128];
+      body_kind k = !strcmp(kind, "raw") ? BODY_RAW : !strcmp(kind, "json") ? BODY_JSON : !strcmp(kind, "file") ? BODY_FILE :
+                    !strcmp(kind, "urlencoded") ? BODY_URLENC : BODY_FORMDATA;
+      kv_list rows;
+      memset(&rows, 0, sizeof(rows));
+      if(k == BODY_URLENC || k == BODY_FORMDATA) {
+        const char *eq = strchr(v, '=');
+        char name[256];
+        kv_row *row;
+        snprintf(name, sizeof(name), "%.*s", eq ? (int)(eq - v) : 0, v);
+        row = kv_add(&rows, name, eq ? eq + 1 : v, 1);
+        if(row && !strcmp(kind, "form-data-file"))
+          row->is_file = 1;
+      }
+      if(form_body_set(&CUR(a)->req, k, &rows, v, err, sizeof(err))) {
+        fprintf(stderr, "--set-body: %s\n", err);
+        return 2;
+      }
+      kv_free(&rows);
     }
     else if(!strcmp(arg, "--set-param")) {
       const char *v = NEXT();

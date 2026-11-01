@@ -82,6 +82,12 @@ static void tab_free(tab_t *t)
   mask_free(t->mask);
   kv_free(&t->params);
   free(t->params_url);
+  form_hints_free(&t->hints);
+  kv_free(&t->header_rows);
+  kv_free(&t->body_rows);
+  free(t->body_file);
+  free(t->auth_a);
+  free(t->auth_b);
   outbuf_free(t->out);
   outbuf_free(t->log);
   outbuf_free(t->pretty_buf);

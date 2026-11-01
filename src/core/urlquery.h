@@ -12,6 +12,7 @@ typedef struct {
   char *key, *value;
   size_t key_cap, value_cap;
   int enabled;
+  int is_file;  /* form-data: the value is a path */
 } kv_row;
 
 typedef struct {

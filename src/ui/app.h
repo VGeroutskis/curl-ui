@@ -10,6 +10,7 @@
 #include "builder.h"
 #include "curlinfo.h"
 #include "docs.h"
+#include "forms.h"
 #include "mask.h"
 #include "options.h"
 #include "outbuf.h"
@@ -95,6 +96,16 @@ typedef struct {
   char *params_url;     /* the URL params was last read from or written to */
   float form_scroll;
   int form_focus;
+  form_hints hints;
+  unsigned long form_sig;  /* the request the rows below were read from */
+  kv_list header_rows, body_rows;
+  body_kind body_choice;
+  char *body_file;
+  size_t body_file_cap;
+  char *auth_a, *auth_b;
+  size_t auth_a_cap, auth_b_cap;
+  int auth_query;
+  char auth_error[128];
   int reveal;           /* the eye on the command: real values, until the tab changes */
   unsigned long copied_secret_at;  /* when Copy took real secret values, for a short note */
   mask_set *mask;       /* the secrets of the last run, hidden in its output */
@@ -318,7 +329,8 @@ void view_tabs(app_t *a, struct nk_rect r);
 void view_form(app_t *a, struct nk_rect r);
 void form_params_sync(tab_t *t);
 void form_params_apply(tab_t *t);
-int form_kv_table(app_t *a, struct nk_rect r, kv_list *l, const char *key_hint, const char *value_hint, int doc_opt);
+int form_kv_table(app_t *a, struct nk_rect r, kv_list *l, const char *key_hint, const char *value_hint, int doc_opt,
+                  int file_col);
 void view_header(app_t *a, struct nk_rect r);
 void view_library(app_t *a, struct nk_rect r);
 void view_center(app_t *a, struct nk_rect r);
