@@ -309,6 +309,8 @@ saves the image and exits; `SDL_VIDEODRIVER=dummy` makes that work headless.
 | `--sidebar collections\|history\|options` | show a left view |
 | `--save-as COLLECTION/FOLDER/NAME`, `--open-node ID`, `--open-history N` | save and open requests |
 | `--import-cmd TEXT` | import a curl command |
+| `--set-body-off K=V` | add a body row switched off |
+| `--quit` | exit as soon as the app has started |
 | `--stats` | print UI time per frame |
 | `--settings-dir DIR` | keep settings in DIR. Scripted runs with `--screenshot` otherwise use none |
 

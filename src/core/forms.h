@@ -15,7 +15,7 @@ typedef struct {
   char auth[16];       /* "apikey" when the auth form set one, since a command cannot tell */
   char *apikey_name;
   char apikey_where[8];
-  kv_list disabled_params, disabled_headers;
+  kv_list disabled_params, disabled_headers, disabled_body;
 } form_hints;
 
 void form_hints_init(form_hints *h);

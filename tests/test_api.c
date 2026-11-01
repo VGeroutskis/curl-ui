@@ -584,6 +584,19 @@ static void test_mask(void)
     request_free(&r);
     vars_free(&st2);
   }
+  /* two secrets that overlap: neither leaves a part showing */
+  {
+    var_store st3;
+    vars_init(&st3);
+    var_set(&st3.e[0], "a", "token123", 1);
+    var_set(&st3.e[0], "b", "123secret", 1);
+    m = mask_build(&st3.e[0], NULL);
+    got = mask_text(m, "token123secret");
+    CHECK_STR(got, "**************");
+    free(got);
+    mask_free(m);
+    vars_free(&st3);
+  }
   /* nothing to hide */
   mask_apply(NULL, NULL, 0);
   vars_free(&st);
@@ -821,6 +834,14 @@ static void test_form_auth(void)
   free(x);
   free(y);
 
+  /* the name typed a letter at a time leaves nothing behind */
+  CHECK(form_auth_set(&r, &h, AUTH_APIKEY, "X", "", "header", err, sizeof(err)) == 0);
+  CHECK(!has_opt(&r, "header"));
+  CHECK(form_auth_set(&r, &h, AUTH_APIKEY, "X-", "", "header", err, sizeof(err)) == 0);
+  CHECK(!has_opt(&r, "header"));
+  CHECK(form_auth_set(&r, &h, AUTH_APIKEY, "X-K", "v", "header", err, sizeof(err)) == 0);
+  CHECK_STR(opt_value(&r, "header", 0), "X-K: v");
+  CHECK(opt_value(&r, "header", 1) == NULL);
   CHECK(form_auth_set(&r, &h, AUTH_APIKEY, "key", "a b", "query", err, sizeof(err)) == 0);
   CHECK(!has_opt(&r, "header"));
   CHECK_STR(r.url, "https://h/p?key=a%20b");
@@ -861,6 +882,7 @@ static void test_reqjson(void)
   a.sel[2].negated = 1;
   kv_add(&ha.disabled_headers, "Off", "v", 0);
   kv_add(&ha.disabled_params, "p", "1", 0);
+  kv_add(&ha.disabled_body, "off", "/p", 0)->is_file = 1;
   snprintf(ha.auth, sizeof(ha.auth), "apikey");
   v = req_to_jv(&a, "POST", &ha, NULL);
   text = jv_write(v, 0, &n);
@@ -879,6 +901,9 @@ static void test_reqjson(void)
   CHECK(b.sel[2].negated == 1);
   CHECK_STR(hb.auth, "apikey");
   CHECK(hb.disabled_headers.n == 1 && hb.disabled_params.n == 1);
+  CHECK(hb.disabled_body.n == 1);
+  CHECK_STR(hb.disabled_body.r[0].key, "off");
+  CHECK(hb.disabled_body.r[0].is_file == 1);
   CHECK_STR(hb.disabled_headers.r[0].key, "Off");
   CHECK(hb.disabled_headers.r[0].enabled == 0);
   request_free(&b);
@@ -1049,6 +1074,31 @@ static void test_history(void)
   CHECK(text && strstr(text, "{{token}}") != NULL);
   free(text);
   history_free(&again);
+  /* short sessions keep the file trimmed too */
+  {
+    history h2;
+    hist_entry e2;
+    FILE *f;
+    char *t2;
+    size_t tn = 0, k;
+    int lines = 0;
+    memset(&h2, 0, sizeof(h2));
+    text = file_read_all(path, &len, (size_t)1 << 24);
+    f = fopen(path, "ab");
+    for(i = 0; i < 4; i++)
+      fwrite(text, 1, len, f);
+    fclose(f);
+    free(text);
+    CHECK(history_load(&h2, path) == 0);
+    CHECK(history_append(&h2, path, hist_row(&e2, 900)) == 0);
+    t2 = file_read_all(path, &tn, (size_t)1 << 26);
+    for(k = 0; k < tn; k++)
+      if(t2[k] == '\n')
+        lines++;
+    CHECK(lines <= HISTORY_MAX + 100);
+    free(t2);
+    history_free(&h2);
+  }
   /* a broken line costs only itself */
   {
     FILE *f = fopen(path, "ab");
@@ -1193,6 +1243,11 @@ static void test_args_remove_stale(void)
   snprintf(b, sizeof(b), "%s/keep.conf", g_dir);
   file_write_private(a, "x", 1);
   file_write_private(b, "y", 1);
+  args_remove_stale(g_dir);
+  CHECK(file_read_all(a, &len, 16) == NULL);
+  /* what a crash during the write leaves */
+  snprintf(a, sizeof(a), "%s/run-1-2.conf.tmp", g_dir);
+  file_write_private(a, "x", 1);
   args_remove_stale(g_dir);
   CHECK(file_read_all(a, &len, 16) == NULL);
   got = file_read_all(b, &len, 16);

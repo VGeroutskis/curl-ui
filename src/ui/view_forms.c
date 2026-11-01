@@ -34,10 +34,9 @@ int form_kv_table(app_t *a, struct nk_rect r, kv_list *l, const char *key_hint, 
   float val_w = r.w - key_w - 22 - 26 - 18 - file_w;
   int i, changed = 0, remove_row = -1;
   ui_clamp_scroll(&CUR(a)->form_scroll, content, r.h);
-  if(!CUR(a)->form_focus)
+  if(!CUR(a)->form_focus_prev)
     ui_wheel(a, r, &CUR(a)->form_scroll, content, 40);
   ui_clamp_scroll(&CUR(a)->form_scroll, content, r.h);
-  CUR(a)->form_focus = 0;
   ui_push_clip(a, r);
   y = r.y - CUR(a)->form_scroll;
   for(i = 0; i < l->n; i++) {
@@ -269,6 +268,8 @@ static void view_body(app_t *a, struct nk_rect r)
   char err[128];
   int i, sel = 0, clicked;
   struct nk_rect area;
+  if(!t->body_file)
+    set_text(&t->body_file, &t->body_file_cap, "");
   if(k == BODY_OPTIONS) {
     set_by_options(a, r, "--data, --form and others together");
     return;
@@ -414,6 +415,9 @@ static void view_auth(app_t *a, struct nk_rect r)
     t->auth_error[0] = '\0';
     form_auth_set(&t->req, &t->hints, k, t->auth_a, t->auth_b, t->auth_query ? "query" : "header", t->auth_error,
                   sizeof(t->auth_error));
+    /* a key may have gone into or out of the headers: that table must not write back old rows */
+    kv_free(&t->header_rows);
+    form_headers_get(&t->req, &t->hints, &t->header_rows);
     t->form_sig = form_request_sig(&t->req);
   }
   if(t->auth_error[0]) {
@@ -433,7 +437,9 @@ void view_form(app_t *a, struct nk_rect r)
   tab_t *t = CUR(a);
   unsigned long sig = form_request_sig(&t->req);
   form_params_sync(t);
-  if(sig != t->form_sig && !t->form_focus) {
+  t->form_focus_prev = t->form_focus;
+  t->form_focus = 0;
+  if(sig != t->form_sig && !t->form_focus_prev) {
     forms_read(t);
     t->form_sig = sig;
   }

@@ -13,6 +13,8 @@ static jv *kv_to_jv(const kv_list *l)
     jv *row = jv_new(JV_OBJ);
     jv_set(row, "key", jv_new_str(l->r[i].key));
     jv_set(row, "value", jv_new_str(l->r[i].value));
+    if(l->r[i].is_file)
+      jv_set(row, "file", jv_new_bool(1));
     jv_push(arr, row);
   }
   return arr;
@@ -24,8 +26,11 @@ static void kv_from_jv(const jv *arr, kv_list *l)
   for(i = 0; i < jv_len(arr); i++) {
     const char *k = jv_str(jv_get(jv_at(arr, i), "key"));
     const char *v = jv_str(jv_get(jv_at(arr, i), "value"));
-    if(k && v)
-      kv_add(l, k, v, 0);
+    if(k && v) {
+      kv_row *row = kv_add(l, k, v, 0);
+      if(row)
+        row->is_file = jv_bool(jv_get(jv_at(arr, i), "file"));
+    }
   }
 }
 
@@ -57,6 +62,7 @@ jv *req_to_jv(const request *r, const char *method, const form_hints *h, const j
     }
     jv_set(hints, "disabled_params", kv_to_jv(&h->disabled_params));
     jv_set(hints, "disabled_headers", kv_to_jv(&h->disabled_headers));
+    jv_set(hints, "disabled_body", kv_to_jv(&h->disabled_body));
   }
   jv_set(o, "form_hints", hints);
   return o;
@@ -115,5 +121,6 @@ int req_from_jv(const jv *v, request *r, char *method, size_t methodn, form_hint
     snprintf(h->apikey_where, sizeof(h->apikey_where), "%s", s);
   kv_from_jv(jv_get(hints, "disabled_params"), &h->disabled_params);
   kv_from_jv(jv_get(hints, "disabled_headers"), &h->disabled_headers);
+  kv_from_jv(jv_get(hints, "disabled_body"), &h->disabled_body);
   return 0;
 }

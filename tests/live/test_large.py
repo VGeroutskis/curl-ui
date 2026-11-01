@@ -41,7 +41,7 @@ def run_app(ui, tmp, name, port, value, option="data-raw"):
         f.write(value)
     dump = os.path.join(tmp, name + ".dump")
     env = dict(os.environ, SDL_VIDEODRIVER="dummy")
-    subprocess.run([ui, "--settings-dir", os.path.join(tmp, "settings"), "--url", "http://127.0.0.1:%d/" % port,
+    subprocess.run([ui, "--settings-dir", os.path.join(tmp, "ρυθμίσεις"), "--url", "http://127.0.0.1:%d/" % port,
                     "--add-file", option + "=" + value_path, "--run", "--dump", dump,
                     "--screenshot", os.path.join(tmp, name + ".bmp")],
                    env=env, check=True, timeout=120)
@@ -85,7 +85,7 @@ def main():
             f.write(paste)
         del received[:]
         dump_path = os.path.join(tmp, "paste.dump")
-        subprocess.run([ui, "--settings-dir", os.path.join(tmp, "settings"), "--size", "1440x900",
+        subprocess.run([ui, "--settings-dir", os.path.join(tmp, "ρυθμίσεις"), "--size", "1440x900",
                         "--url", "http://127.0.0.1:%d/" % port, "--add", "data-raw",
                         "--click", "680,%d" % FIRST_VALUE_Y, "--paste-file", paste_path, "--click", "970,%d" % RUN_Y,
                         "--dump", dump_path,

@@ -440,6 +440,7 @@ void app_run(app_t *a)
     char line[640];
     int len = snprintf(line, sizeof(line), "curl: %s\n", err);
     outbuf_append(CUR(a)->log, line, (size_t)len);
+    args_files_remove(&CUR(a)->run_files);
     CUR(a)->out_tab = TAB_LOG;
     CUR(a)->has_result = 1;
     CUR(a)->exit_code = 127;

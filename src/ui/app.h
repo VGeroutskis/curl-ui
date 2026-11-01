@@ -105,6 +105,7 @@ typedef struct {
   char *params_url;     /* the URL params was last read from or written to */
   float form_scroll;
   int form_focus;
+  int form_focus_prev;
   form_hints hints;
   unsigned long form_sig;  /* the request the rows below were read from */
   kv_list header_rows, body_rows;
@@ -243,6 +244,7 @@ typedef struct {
   int env_edit_for;
   int env_editing;
   int env_del_armed;
+  const void *reveal_tab;  /* the tab the command's eye was last open in */
   char notice[2048];    /* something the user should know, until dismissed */
 
   /* the prompt for missing variables */
@@ -360,6 +362,7 @@ void view_modal(app_t *a);
 void view_vars(app_t *a, struct nk_rect r);
 void app_vars_save(app_t *a);
 void app_vars_autosave(app_t *a);
+void app_vars_flush(app_t *a);  /* at exit: whatever has the focus */
 unsigned long app_vars_hash(const app_t *a);
 struct nk_rect env_menu_rect(app_t *a);
 int env_menu_item_at(app_t *a, struct nk_vec2 pos);

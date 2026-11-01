@@ -496,12 +496,13 @@ static void dialog_confirm(app_t *a)
       coll_node *added = coll_add(to, NODE_REQUEST, a->dlg_name, NULL);
       if(added && !tab_save_to_node(a, CUR(a), added)) {
         to->open = 1;
-        if(a->dlg_close_after) {
+        if(a->dlg_close_after)
           tab_close(a, a->cur);
-          a->dlg_close_after = 0;
-        }
       }
+      else if(added)
+        coll_remove(added);
     }
+    a->dlg_close_after = 0;
     break;
   }
   default:

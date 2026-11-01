@@ -123,23 +123,29 @@ void mask_free(mask_set *m)
 
 void mask_apply(const mask_set *m, char *buf, size_t len)
 {
+  char *orig;
   int i;
-  if(!m || !buf)
+  if(!m || !buf || !m->count || !len)
     return;
+  /* searched in the original, so that secrets that overlap are each still found */
+  orig = malloc(len);
+  if(!orig) {
+    memset(buf, '*', len);
+    return;
+  }
+  memcpy(orig, buf, len);
   for(i = 0; i < m->count; i++) {
     size_t n = m->n[i], at = 0;
     const char first = m->s[i][0];
     while(n && at + n <= len) {
-      char *hit = memchr(buf + at, first, len - at - n + 1);
+      char *hit = memchr(orig + at, first, len - at - n + 1);
       if(!hit)
         break;
-      at = (size_t)(hit - buf);
-      if(!memcmp(hit, m->s[i], n)) {
-        memset(hit, '*', n);
-        at += n;
-      }
-      else
-        at++;
+      at = (size_t)(hit - orig);
+      if(!memcmp(hit, m->s[i], n))
+        memset(buf + at, '*', n);
+      at++;
     }
   }
+  free(orig);
 }

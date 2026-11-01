@@ -393,6 +393,14 @@ static int write_dump(app_t *a, const char *path)
       static const char *const body_names[] = { "none", "raw", "json", "form-data", "urlencoded", "file", "options" };
       fprintf(f, "body_kind=%s\n", body_names[form_body_kind(&CUR(a)->req)]);
     }
+    {
+      int k, nodes = 0;
+      for(k = 0; k < a->ncolls; k++)
+        nodes += a->colls[k]->root->nkids;
+      fprintf(f, "coll_top_nodes=%d\nauth=%s:%s\n", nodes, CUR(a)->auth_a ? CUR(a)->auth_a : "", CUR(a)->auth_b ? CUR(a)->auth_b : "");
+      for(k = 0; k < CUR(a)->body_rows.n; k++)
+        fprintf(f, "body_row=%s:%s:%d\n", CUR(a)->body_rows.r[k].key, CUR(a)->body_rows.r[k].value, CUR(a)->body_rows.r[k].enabled);
+    }
     fprintf(f, "node=%s\ndirty=%d\ntitle=%s\n", CUR(a)->node_id, CUR(a)->dirty, CUR(a)->title);
     fprintf(f, "env=%s\nshow_vars=%d\nnotice=%s\nmodal=%d\nmodal_missing=", a->vars.e[a->vars.active].name, a->show_vars,
             a->notice, a->modal_open);
@@ -531,8 +539,12 @@ int main(int argc, char **argv)
       app_store_load(a);
     }
     settings_path(settings_dir, "session.json", a->session_path, sizeof(a->session_path));
-    if(!have_cli_request && a->set.reopen_tabs)
+    /* a command line for a person opens next to the tabs; a script starts clean */
+    if(a->set.reopen_tabs && (!have_cli_request || !screenshot)) {
       app_session_load(a);
+      if(have_cli_request && (CUR(a)->req.url[0] || CUR(a)->req.nsel))
+        tab_new(a);
+    }
     /* what an older version remembered becomes a tab, once */
     settings_path(settings_dir, "last-request.txt", request_path, sizeof(request_path));
     if(a->set.legacy_remember) {
@@ -770,6 +782,15 @@ int main(int argc, char **argv)
       if(app_import_command(a, NEXT(), err, sizeof(err)))
         app_notice(a, err);
     }
+    else if(!strcmp(arg, "--quit"))
+      a->quit = 1;
+    else if(!strcmp(arg, "--set-body-off")) {
+      const char *v = NEXT();
+      const char *eq = strchr(v, '=');
+      char name[256];
+      snprintf(name, sizeof(name), "%.*s", eq ? (int)(eq - v) : 0, v);
+      kv_add(&CUR(a)->body_rows, name, eq ? eq + 1 : v, 0);
+    }
     else if(!strcmp(arg, "--sidebar")) {
       const char *v = NEXT();
       a->sidebar = !strcmp(v, "collections") ? SIDE_COLLECTIONS : !strcmp(v, "history") ? SIDE_HISTORY : SIDE_OPTIONS;
@@ -921,7 +942,7 @@ int main(int argc, char **argv)
       fprintf(stderr, "cannot write %s\n", dump);
     if(a->settings_path[0]) {
       settings_save(&a->set, a->settings_path);
-      app_vars_autosave(a);
+      app_vars_flush(a);
       app_session_save(a);
     }
     /* render once more to a presented-free back buffer and read it */
@@ -1056,7 +1077,7 @@ int main(int argc, char **argv)
   if(a->settings_path[0]) {
     SDL_GetWindowSize(g_window, &a->set.win_w, &a->set.win_h);
     settings_save(&a->set, a->settings_path);
-    app_vars_autosave(a);
+    app_vars_flush(a);
     app_session_save(a);
   }
   if(stats)

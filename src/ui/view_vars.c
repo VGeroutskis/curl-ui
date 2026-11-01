@@ -46,6 +46,12 @@ void app_vars_autosave(app_t *a)
     app_vars_save(a);
 }
 
+void app_vars_flush(app_t *a)
+{
+  if(store_hash(&a->vars) != a->vars_hash)
+    app_vars_save(a);
+}
+
 static void hide_values(var_env *e)
 {
   int i;
@@ -110,6 +116,9 @@ static void env_controls(app_t *a, float x, float y, float w)
     if(a->env_del_armed) {
       env_remove(st, st->active);
       a->env_del_armed = 0;
+      /* another one may now be at this index: it keeps its own name */
+      a->env_edit_for = -1;
+      a->env_editing = 0;
       a->pending_unfocus = 1;
     }
     else
@@ -174,6 +183,8 @@ void view_vars(app_t *a, struct nk_rect r)
       if(st & NK_EDIT_ACTIVE)
         a->vars_focus = 1;
     }
+    if(v->secret && v->value[0] && strlen(v->value) < MASK_MIN_LEN)
+      ui_text_fit(a, a->f.small, value_r.x + value_r.w - 150, y, 30, 144, "too short to hide in output", p->amber);
     fx += val_w + 8;
     box = nk_rect(fx + 6, y + 7, 16, 16);
     target = nk_rect(fx, y, sec_w, 30);

@@ -15,6 +15,7 @@ void form_hints_free(form_hints *h)
   free(h->apikey_name);
   kv_free(&h->disabled_params);
   kv_free(&h->disabled_headers);
+  kv_free(&h->disabled_body);
   memset(h, 0, sizeof(*h));
 }
 
@@ -478,7 +479,8 @@ int form_auth_set(request *r, form_hints *h, auth_kind k, const char *a, const c
     snprintf(h->auth, sizeof(h->auth), "apikey");
     snprintf(h->apikey_where, sizeof(h->apikey_where), "%s", where && !strcmp(where, "query") ? "query" : "header");
     h->apikey_name = copy_text(name);
-    if(name[0]) {
+    /* no value yet is no header yet: a half typed name must not go out */
+    if(name[0] && value[0]) {
       if(!strcmp(h->apikey_where, "query")) {
         kv_list rows;
         if(!query_parse(r->url, &rows)) {
@@ -493,7 +495,7 @@ int form_auth_set(request *r, form_hints *h, auth_kind k, const char *a, const c
         }
       }
       else {
-        char *line = value[0] ? join3(name, ": ", value) : join3(name, ";", "");
+        char *line = join3(name, ": ", value);
         if(line) {
           add_value(r, "header", line);
           free(line);

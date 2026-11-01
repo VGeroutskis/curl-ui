@@ -22,6 +22,14 @@ static jv *tab_to_jv(tab_t *t)
   for(i = 0; i < t->params.n; i++)
     if(!t->params.r[i].enabled)
       kv_add(&t->hints.disabled_params, t->params.r[i].key, t->params.r[i].value, 0);
+  kv_free(&t->hints.disabled_body);
+  for(i = 0; i < t->body_rows.n; i++) {
+    if(!t->body_rows.r[i].enabled) {
+      kv_row *off = kv_add(&t->hints.disabled_body, t->body_rows.r[i].key, t->body_rows.r[i].value, 0);
+      if(off)
+        off->is_file = t->body_rows.r[i].is_file;
+    }
+  }
   return req_to_jv(&t->req, g_method_names[t->method], &t->hints, t->extra);
 }
 
@@ -41,6 +49,24 @@ void tab_mark_clean(tab_t *t)
   t->dirty_sig = 0;
 }
 
+/* Rows switched off are saved and are nowhere in the command. */
+static unsigned long rows_sig(unsigned long h, const kv_list *l, int only_off)
+{
+  int i;
+  const char *s;
+  for(i = 0; i < l->n; i++) {
+    if(only_off && l->r[i].enabled)
+      continue;
+    for(s = l->r[i].key; *s; s++)
+      h = (h ^ (unsigned char)*s) * 16777619u;
+    h = (h ^ 0xFF) * 16777619u;
+    for(s = l->r[i].value; *s; s++)
+      h = (h ^ (unsigned char)*s) * 16777619u;
+    h = (h ^ 0xFE) * 16777619u;
+  }
+  return h;
+}
+
 static unsigned long tab_sig(const tab_t *t)
 {
   unsigned long h = form_request_sig(&t->req);
@@ -48,8 +74,10 @@ static unsigned long tab_sig(const tab_t *t)
   h = (h ^ (unsigned long)t->method) * 16777619u;
   for(i = 0; i < t->params.n; i++)
     h = (h ^ (unsigned long)t->params.r[i].enabled) * 16777619u;
-  for(i = 0; i < t->hints.disabled_headers.n; i++)
-    h = (h ^ (unsigned long)i) * 16777619u;
+  h = rows_sig(h, &t->params, 1);
+  h = rows_sig(h, &t->hints.disabled_headers, 0);
+  h = rows_sig(h, &t->body_rows, 1);
+  h = rows_sig(h, &t->header_rows, 1);
   return h + 1;
 }
 
@@ -85,6 +113,12 @@ static void tab_load(tab_t *t, const jv *req)
   form_params_sync(t);
   for(i = 0; i < t->hints.disabled_params.n; i++)
     kv_add(&t->params, t->hints.disabled_params.r[i].key, t->hints.disabled_params.r[i].value, 0);
+  kv_free(&t->body_rows);
+  for(i = 0; i < t->hints.disabled_body.n; i++) {
+    kv_row *off = kv_add(&t->body_rows, t->hints.disabled_body.r[i].key, t->hints.disabled_body.r[i].value, 0);
+    if(off)
+      off->is_file = t->hints.disabled_body.r[i].is_file;
+  }
 }
 
 static int tab_is_blank(const tab_t *t)
@@ -237,7 +271,11 @@ int app_save_as_path(app_t *a, const char *path)
   n = coll_add(at, NODE_REQUEST, last + 1, NULL);
   if(!n)
     return -1;
-  return tab_save_to_node(a, CUR(a), n);
+  if(tab_save_to_node(a, CUR(a), n)) {
+    coll_remove(n);
+    return -1;
+  }
+  return 0;
 }
 
 /* ---- history ---- */
@@ -359,6 +397,14 @@ void app_session_load(app_t *a)
     return;
   root = jv_parse(text, len, NULL, 0);
   free(text);
+  if(!root) {
+    char moved[2100], msg[2200];
+    if(file_quarantine(a->session_path, moved, sizeof(moved)))
+      snprintf(moved, sizeof(moved), "%s", a->session_path);
+    snprintf(msg, sizeof(msg), "The open tabs could not be restored. The file was kept as %s", moved);
+    app_notice(a, msg);
+    return;
+  }
   tabs = jv_get(root, "tabs");
   for(i = 0; i < jv_len(tabs); i++) {
     const jv *row = jv_at(tabs, i);

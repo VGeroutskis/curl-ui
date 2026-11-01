@@ -60,12 +60,14 @@ int history_load(history *h, const char *path)
   char *text = file_read_all(path, &len, HISTORY_FILE_MAX);
   char *p;
   h->n = 0;
+  h->file_lines = 0;
   if(!text)
     return 0;
   for(p = text; p < text + len;) {
     char *nl = memchr(p, '\n', (size_t)(text + len - p));
     size_t ln = nl ? (size_t)(nl - p) : (size_t)(text + len - p);
     jv *o = ln ? jv_parse(p, ln, NULL, 0) : NULL;
+    h->file_lines++;
     if(jv_kind(o) == JV_OBJ && jv_get(o, "request")) {
       hist_entry e;
       memset(&e, 0, sizeof(e));
@@ -120,7 +122,6 @@ int history_append(history *h, const char *path, hist_entry *entry)
   char *line = entry_line(entry, &n);
   FILE *f;
   int rc = -1;
-  static int appended;
   push(h, entry);
   memset(entry, 0, sizeof(*entry));
   if(!line)
@@ -141,9 +142,9 @@ int history_append(history *h, const char *path, hist_entry *entry)
       rc = -1;
   }
   free(line);
-  if(++appended >= HISTORY_REWRITE_AT - HISTORY_MAX && h->n == HISTORY_MAX) {
-    appended = 0;
+  if(++h->file_lines > HISTORY_REWRITE_AT) {
     rc = rewrite(h, path);
+    h->file_lines = h->n;
   }
   return rc;
 }
@@ -154,6 +155,7 @@ int history_clear(history *h, const char *path)
   for(i = 0; i < h->n; i++)
     entry_free(&h->e[i]);
   h->n = 0;
+  h->file_lines = 0;
   remove(path);
   return 0;
 }

@@ -128,6 +128,19 @@ void view_frame(app_t *a)
   int tree_was_open = a->tree_menu != NULL;
 
   a->big_paste = 0;
+  /* the eyes close when you look elsewhere */
+  if(a->reveal_tab && a->reveal_tab != CUR(a)) {
+    int t;
+    for(t = 0; t < a->ntabs; t++)
+      a->tabs[t]->reveal = 0;
+  }
+  a->reveal_tab = CUR(a);
+  if(!a->show_vars) {
+    var_env *ve = &a->vars.e[a->vars.active];
+    int k;
+    for(k = 0; k < ve->n; k++)
+      ve->v[k].reveal = 0;
+  }
   a->cursor = CURSOR_ARROW;
   a->hover_frame = -1;
   a->any_focus = 0;

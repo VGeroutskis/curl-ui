@@ -21,6 +21,7 @@ typedef struct {
 typedef struct {
   hist_entry *e;
   int n;
+  int file_lines;  /* in the file, to know when to trim it */
 } history;
 
 int history_load(history *h, const char *path);  /* broken lines are skipped */

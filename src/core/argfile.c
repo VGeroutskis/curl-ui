@@ -203,7 +203,7 @@ void args_remove_stale(const char *dir)
 #ifdef _WIN32
   WIN32_FIND_DATAA d;
   HANDLE h;
-  snprintf(path, sizeof(path), "%s\\run-*.conf", dir);
+  snprintf(path, sizeof(path), "%s\\run-*.conf*", dir);
   h = FindFirstFileA(path, &d);
   if(h == INVALID_HANDLE_VALUE)
     return;
@@ -219,7 +219,7 @@ void args_remove_stale(const char *dir)
     return;
   while((e = readdir(d))) {
     size_t n = strlen(e->d_name);
-    if(n > 9 && !strncmp(e->d_name, "run-", 4) && !strcmp(e->d_name + n - 5, ".conf")) {
+    if(n > 9 && !strncmp(e->d_name, "run-", 4) && strstr(e->d_name, ".conf")) {
       snprintf(path, sizeof(path), "%s/%s", dir, e->d_name);
       remove(path);
     }
