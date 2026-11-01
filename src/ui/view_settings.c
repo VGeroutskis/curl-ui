@@ -157,8 +157,8 @@ void view_settings(app_t *a, struct nk_rect r)
   toggle_row(a, x, y, w, "Fill the Log tab and status chips", "Adds --verbose, --no-progress-meter, --write-out to runs",
              &set->capture);
   y += ROW_H;
-  toggle_row(a, x, y, w, "Remember the last request", "Saved in a private file, including any passwords in it",
-             &set->remember);
+  toggle_row(a, x, y, w, "Reopen tabs", "Saved in a private file, including any passwords written in them",
+             &set->reopen_tabs);
   y += ROW_H;
   row_label(a, x, y, "Docs hover delay", NULL, w);
   sel = -1;

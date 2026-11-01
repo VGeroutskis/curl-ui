@@ -34,7 +34,8 @@ add_library(curlui_core STATIC
   src/core/procrun.c src/core/outbuf.c src/core/json_fmt.c
   src/core/curlinfo.c src/core/docs.c src/core/settings.c
   src/core/json.c src/core/fileio.c src/core/argfile.c
-  src/core/urlquery.c src/core/vars.c src/core/mask.c src/core/forms.c)
+  src/core/urlquery.c src/core/vars.c src/core/mask.c src/core/forms.c
+  src/core/reqjson.c src/core/collection.c)
 target_include_directories(curlui_core PUBLIC src/core)
 target_link_libraries(curlui_core PUBLIC Threads::Threads)
 if(NOT WIN32)
@@ -94,7 +95,7 @@ if(CURLUI_BUILD_GUI)
 
   set(CURLUI_SOURCES
     src/ui/main.c src/ui/app.c src/ui/theme.c src/ui/draw.c src/ui/fonts_data.c
-    src/ui/view_frame.c src/ui/view_tabs.c src/ui/view_vars.c src/ui/view_modal.c src/ui/view_forms.c src/ui/view_library.c src/ui/view_center.c
+    src/ui/view_frame.c src/ui/view_tabs.c src/ui/view_vars.c src/ui/view_modal.c src/ui/view_forms.c src/ui/store.c src/ui/view_collections.c src/ui/view_library.c src/ui/view_center.c
     src/ui/view_output.c src/ui/view_docs.c src/ui/view_settings.c)
   if(WIN32)
     list(APPEND CURLUI_SOURCES packaging/curl-ui.rc)

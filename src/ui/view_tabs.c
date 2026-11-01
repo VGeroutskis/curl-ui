@@ -10,6 +10,10 @@ static void tab_title(const app_t *a, const tab_t *t, char *out, size_t n)
 {
   const char *url = t->req.url;
   const char *scheme = strstr(url, "://");
+  if(t->title[0]) {
+    snprintf(out, n, "%s", t->title);
+    return;
+  }
   if(scheme)
     url = scheme + 3;
   snprintf(out, n, "%s %s", app_method_label(a, t, t->method), url[0] ? url : "New request");
@@ -79,5 +83,5 @@ void view_tabs(app_t *a, struct nk_rect r)
     a->pending_unfocus = 1;
   }
   if(close >= 0)
-    tab_close(a, close);
+    app_request_close(a, close);
 }

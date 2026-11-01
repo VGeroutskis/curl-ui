@@ -1,4 +1,4 @@
-/* User settings and the remembered request: small key=value text files that
+/* User settings, and the request an older version remembered: small key=value text files that
    can also be edited by hand. Anything malformed falls back to the default. */
 #ifndef CURLUI_SETTINGS_H
 #define CURLUI_SETTINGS_H
@@ -18,7 +18,8 @@ typedef struct {
   int pretty;         /* Pretty JSON on by default */
   int capture;        /* add --verbose etc. for the Log tab and status chips */
   int hover_ms;       /* docs panel hover delay */
-  int remember;       /* keep the last request between runs */
+  int reopen_tabs;    /* open tabs come back at the next start */
+  int legacy_remember; /* an older version kept one request in last-request.txt */
   int win_w, win_h;   /* 0 means the default size */
 } settings_t;
 

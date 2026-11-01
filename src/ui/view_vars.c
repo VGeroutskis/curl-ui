@@ -28,6 +28,11 @@ static unsigned long store_hash(const var_store *s)
   return h;
 }
 
+unsigned long app_vars_hash(const app_t *a)
+{
+  return store_hash(&a->vars);
+}
+
 void app_vars_save(app_t *a)
 {
   a->vars_hash = store_hash(&a->vars);

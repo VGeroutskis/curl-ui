@@ -8,6 +8,7 @@
 
 #include "argfile.h"
 #include "builder.h"
+#include "collection.h"
 #include "curlinfo.h"
 #include "docs.h"
 #include "forms.h"
@@ -91,6 +92,11 @@ typedef struct {
   arg_list args_real;   /* what curl gets */
   arg_list args;        /* what is on screen: secrets hidden, tokens parallel to the others */
   int dirty;            /* differs from what is saved */
+  char node_id[17];     /* the saved request it is, or "" */
+  char title[128];
+  char *saved_json;     /* what was last saved, to compare with */
+  unsigned long dirty_sig;
+  jv *extra;            /* options this build does not know, carried along */
   form_kind form;
   kv_list params;       /* the query of the URL, and rows switched off */
   char *params_url;     /* the URL params was last read from or written to */
@@ -142,6 +148,12 @@ typedef struct {
 
 #define CUR(a) ((a)->tabs[(a)->cur])
 
+typedef enum { SIDE_COLLECTIONS, SIDE_HISTORY, SIDE_OPTIONS, SIDE_COUNT } side_kind;
+typedef enum {
+  DLG_NONE, DLG_NEW_COLL, DLG_NEW_FOLDER, DLG_NEW_REQUEST, DLG_RENAME, DLG_SAVE_AS, DLG_MOVE, DLG_DELETE, DLG_CLOSE_TAB,
+  DLG_QUIT
+} dialog_kind;
+
 typedef enum { MODAL_NONE, MODAL_SAVE, MODAL_CANCEL, MODAL_OPEN_VARS } modal_action;
 
 typedef struct {
@@ -186,6 +198,25 @@ typedef struct {
   int sel_scratch[512];
 
   int show_settings;
+
+  /* collections */
+  side_kind sidebar;
+  collection **colls;
+  int ncolls;
+  char coll_dir[SETTINGS_PATH_CAP];
+  char session_path[SETTINGS_PATH_CAP];
+  char coll_search[128];
+  float tree_scroll;
+  coll_node *tree_menu;
+  struct nk_vec2 tree_menu_at;
+  dialog_kind dlg;
+  coll_node *dlg_node;
+  coll_node **dlg_targets;
+  int dlg_ntargets, dlg_target;
+  float dlg_scroll;
+  char dlg_name[256];
+  int dlg_pending;      /* 1 ok, 2 cancel, 3 discard */
+  int dlg_close_after;  /* a Save as that started from closing the tab */
 
   /* variables */
   var_store vars;
@@ -317,11 +348,36 @@ void view_modal(app_t *a);
 void view_vars(app_t *a, struct nk_rect r);
 void app_vars_save(app_t *a);
 void app_vars_autosave(app_t *a);
+unsigned long app_vars_hash(const app_t *a);
 struct nk_rect env_menu_rect(app_t *a);
 int env_menu_item_at(app_t *a, struct nk_vec2 pos);
 void env_menu_pick(app_t *a, int item);
 void env_menu_draw(app_t *a);
 void app_notice(app_t *a, const char *text);
+
+/* store.c, view_collections.c */
+void tab_mark_clean(tab_t *t);
+void app_tabs_update_dirty(app_t *a);
+void app_open_node(app_t *a, coll_node *n);
+coll_node *app_find_node(app_t *a, const char *id);
+int app_save_coll_of(app_t *a, const coll_node *n);
+collection *app_new_collection(app_t *a, const char *name);
+int tab_save_to_node(app_t *a, tab_t *t, coll_node *n);
+void app_save_current(app_t *a);
+int app_save_as_path(app_t *a, const char *path);
+void app_store_load(app_t *a);
+void app_session_load(app_t *a);
+void app_session_save(app_t *a);
+void app_store_free(app_t *a);
+void app_request_close(app_t *a, int i);
+void dialog_open(app_t *a, dialog_kind kind, coll_node *node);
+void view_dialog(app_t *a);
+void dialog_run_pending(app_t *a);
+void tree_menu_click(app_t *a, struct nk_vec2 pos);
+void tree_menu_draw(app_t *a);
+void view_sidebar(app_t *a, struct nk_rect r);
+void view_history(app_t *a, struct nk_rect r);
+unsigned long form_request_sig(const request *q);
 
 /* views */
 void view_frame(app_t *a);

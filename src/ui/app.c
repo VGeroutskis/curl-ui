@@ -83,6 +83,8 @@ static void tab_free(tab_t *t)
   kv_free(&t->params);
   free(t->params_url);
   form_hints_free(&t->hints);
+  free(t->saved_json);
+  jv_free(t->extra);
   kv_free(&t->header_rows);
   kv_free(&t->body_rows);
   free(t->body_file);
@@ -115,6 +117,7 @@ int tab_new(app_t *a)
   t->pretty = a->set.pretty;
   a->tabs[a->ntabs] = t;
   a->cur = a->ntabs++;
+  tab_mark_clean(t);
   return a->cur;
 }
 
@@ -154,6 +157,7 @@ void app_init(app_t *a)
   a->hover_cand = -1;
   a->filter_last = -1;
   a->doc_arena = malloc(8192);
+  a->sidebar = SIDE_OPTIONS;
 }
 
 void app_free(app_t *a)
@@ -163,6 +167,7 @@ void app_free(app_t *a)
     tab_free(a->tabs[i]);
   a->ntabs = 0;
   modal_close(a);
+  app_store_free(a);
   vars_free(&a->vars);
   free(a->dops);
   free(a->doc_arena);

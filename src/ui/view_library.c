@@ -141,8 +141,6 @@ void view_library(app_t *a, struct nk_rect r)
   int first, last;
 
   ui_push_clip(a, r);
-  ui_rect(a, r, 0, p->panel);
-  nk_stroke_line(nk_window_get_canvas(a->ctx), r.x + r.w - 0.5f, r.y, r.x + r.w - 0.5f, r.y + r.h, 1.0f, p->border);
 
   ui_edit(a, nk_rect(x, y, w, 32), a->search, SEARCH_CAP, "Search 278 options by name or description", a->f.sans, 0);
   y += 40;

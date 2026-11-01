@@ -19,6 +19,7 @@ void settings_defaults(settings_t *s)
   s->pretty = 1;
   s->capture = 1;
   s->hover_ms = 110;
+  s->reopen_tabs = 1;
 }
 
 int settings_path(const char *override, const char *name, char *out, size_t n)
@@ -161,8 +162,10 @@ int settings_load(settings_t *s, const char *path)
       s->capture = parse_int(v, 0, 1, s->capture);
     else if(!strcmp(k, "docs_hover_ms"))
       s->hover_ms = parse_int(v, 0, 2000, s->hover_ms);
+    else if(!strcmp(k, "reopen_tabs"))
+      s->reopen_tabs = parse_int(v, 0, 1, s->reopen_tabs);
     else if(!strcmp(k, "remember_request"))
-      s->remember = parse_int(v, 0, 1, s->remember);
+      s->legacy_remember = parse_int(v, 0, 1, s->legacy_remember);
     else if(!strcmp(k, "window_width"))
       s->win_w = parse_int(v, 0, 32768, s->win_w);
     else if(!strcmp(k, "window_height"))
@@ -193,7 +196,7 @@ int settings_save(const settings_t *s, const char *path)
   fprintf(f, "pretty_json=%d\n", s->pretty);
   fprintf(f, "capture_log=%d\n", s->capture);
   fprintf(f, "docs_hover_ms=%d\n", s->hover_ms);
-  fprintf(f, "remember_request=%d\n", s->remember);
+  fprintf(f, "reopen_tabs=%d\n", s->reopen_tabs);
   fprintf(f, "window_width=%d\n", s->win_w);
   fprintf(f, "window_height=%d\n", s->win_h);
   return file_commit(f, tmp, path);

@@ -183,7 +183,7 @@ static void frame(app_t *a)
 
 /* ---- scripted test hooks ---- */
 
-typedef enum { SC_MOUSE, SC_CLICK, SC_PASTE, SC_MODAL_VALUE, SC_MODAL_ACTION, SC_SELECT_TAB, SC_CLOSE_TAB, SC_TYPE, SC_WHEEL } script_kind;
+typedef enum { SC_MOUSE, SC_CLICK, SC_PASTE, SC_SAVE_AS, SC_MODAL_VALUE, SC_MODAL_ACTION, SC_SELECT_TAB, SC_CLOSE_TAB, SC_TYPE, SC_WHEEL } script_kind;
 typedef struct {
   script_kind kind;
   int x, y, dy;
@@ -298,6 +298,11 @@ static void run_script(app_t *a, const script_op *ops, int n)
       input_frame(a, feed_wheel, op);
       settle(a);
       break;
+    case SC_SAVE_AS:
+      if(app_save_as_path(a, op->text))
+        fprintf(stderr, "--save-as failed: %s\n", op->text);
+      settle(a);
+      break;
     case SC_MODAL_VALUE: {
       const char *eq = strchr(op->text, '=');
       int m;
@@ -388,6 +393,7 @@ static int write_dump(app_t *a, const char *path)
       static const char *const body_names[] = { "none", "raw", "json", "form-data", "urlencoded", "file", "options" };
       fprintf(f, "body_kind=%s\n", body_names[form_body_kind(&CUR(a)->req)]);
     }
+    fprintf(f, "node=%s\ndirty=%d\ntitle=%s\n", CUR(a)->node_id, CUR(a)->dirty, CUR(a)->title);
     fprintf(f, "env=%s\nshow_vars=%d\nnotice=%s\nmodal=%d\nmodal_missing=", a->vars.e[a->vars.active].name, a->show_vars,
             a->notice, a->modal_open);
     for(i = 0; i < a->modal_names.n; i++)
@@ -515,10 +521,27 @@ int main(int argc, char **argv)
       if(vars_load(&a->vars, a->vars_path, err, sizeof(err)))
         app_notice(a, err);
     }
+    if(!settings_path(settings_dir, "collections/x", a->coll_dir, sizeof(a->coll_dir))) {
+      char *slash = strrchr(a->coll_dir, '/');
+      if(!slash)
+        slash = strrchr(a->coll_dir, '\\');
+      if(slash)
+        *slash = '\0';
+      app_store_load(a);
+    }
+    settings_path(settings_dir, "session.json", a->session_path, sizeof(a->session_path));
+    if(!have_cli_request && a->set.reopen_tabs)
+      app_session_load(a);
+    /* what an older version remembered becomes a tab, once */
     settings_path(settings_dir, "last-request.txt", request_path, sizeof(request_path));
-    if(a->set.remember && !have_cli_request)
-      request_load(&CUR(a)->req, &CUR(a)->method, request_path);
+    if(a->set.legacy_remember) {
+      if(tab_new(a) >= 0 && request_load(&CUR(a)->req, &CUR(a)->method, request_path) != 1 && a->ntabs > 1)
+        tab_close(a, a->cur);
+      remove(request_path);
+      a->set.legacy_remember = 0;
+    }
   }
+  a->vars_hash = app_vars_hash(a);
   CUR(a)->pretty = a->set.pretty;
   screenshot = NULL;
 
@@ -725,6 +748,20 @@ int main(int argc, char **argv)
           CUR(a)->params.r[k].enabled = 0;
       form_params_apply(CUR(a));
     }
+    else if(!strcmp(arg, "--save-as") && nops < MAX_SCRIPT) {
+      script_op *op = &ops[nops++];
+      op->kind = SC_SAVE_AS;
+      op->text = NEXT();
+    }
+    else if(!strcmp(arg, "--open-node")) {
+      coll_node *n = app_find_node(a, NEXT());
+      if(n)
+        app_open_node(a, n);
+    }
+    else if(!strcmp(arg, "--sidebar")) {
+      const char *v = NEXT();
+      a->sidebar = !strcmp(v, "collections") ? SIDE_COLLECTIONS : !strcmp(v, "history") ? SIDE_HISTORY : SIDE_OPTIONS;
+    }
     else if(!strcmp(arg, "--reveal"))
       CUR(a)->reveal = 1;
     else if(!strcmp(arg, "--open-vars"))
@@ -872,8 +909,8 @@ int main(int argc, char **argv)
       fprintf(stderr, "cannot write %s\n", dump);
     if(a->settings_path[0]) {
       settings_save(&a->set, a->settings_path);
-      if(a->set.remember)
-        request_save(&CUR(a)->req, CUR(a)->method, request_path);
+      app_vars_autosave(a);
+      app_session_save(a);
     }
     /* render once more to a presented-free back buffer and read it */
     rc = save_screenshot(screenshot);
@@ -949,16 +986,25 @@ int main(int argc, char **argv)
           fprintf(stderr, " window-event %d", ev.window.event);
         fprintf(stderr, "\n");
       }
-      if(ev.type == SDL_QUIT)
-        a->quit = 1;
-      if(ev.type == SDL_KEYDOWN && (ev.key.keysym.mod & (KMOD_CTRL | KMOD_GUI)) && !a->modal_open) {
-        if(ev.key.keysym.sym == SDLK_t) {
+      if(ev.type == SDL_QUIT) {
+        int dirty = 0, k;
+        for(k = 0; k < a->ntabs; k++)
+          dirty |= a->tabs[k]->dirty;
+        if(dirty && !a->set.reopen_tabs && a->dlg == DLG_NONE)
+          dialog_open(a, DLG_QUIT, NULL);
+        else
+          a->quit = 1;
+      }
+      if(ev.type == SDL_KEYDOWN && (ev.key.keysym.mod & (KMOD_CTRL | KMOD_GUI)) && !a->modal_open && a->dlg == DLG_NONE) {
+        if(ev.key.keysym.sym == SDLK_s)
+          app_save_current(a);
+        else if(ev.key.keysym.sym == SDLK_t) {
           CUR(a)->reveal = 0;
           if(tab_new(a) >= 0)
             a->pending_unfocus = 1;
         }
         else if(ev.key.keysym.sym == SDLK_w)
-          tab_close(a, a->cur);
+          app_request_close(a, a->cur);
         else if(ev.key.keysym.sym == SDLK_RETURN && !CUR(a)->proc)
           app_run(a);
       }
@@ -999,10 +1045,7 @@ int main(int argc, char **argv)
     SDL_GetWindowSize(g_window, &a->set.win_w, &a->set.win_h);
     settings_save(&a->set, a->settings_path);
     app_vars_autosave(a);
-    if(a->set.remember)
-      request_save(&CUR(a)->req, CUR(a)->method, request_path);
-    else
-      remove(request_path);  /* turning it off forgets what it held */
+    app_session_save(a);
   }
   if(stats)
     printf("frames %ld, UI time avg %.3f ms, max %.3f ms\n", g_frames, g_frame_ms_total / (double)g_frames, g_frame_ms_max);

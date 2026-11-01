@@ -791,14 +791,14 @@ static void test_settings(void)
   s.pretty = 0;
   s.capture = 0;
   s.hover_ms = 300;
-  s.remember = 1;
+  s.reopen_tabs = 0;
   s.win_w = 1500;
   s.win_h = 900;
   CHECK(settings_save(&s, path) == 0);
   settings_defaults(&l);
   CHECK(settings_load(&l, path) == 1);
   CHECK(l.dark == 0 && l.zoom == 125 && l.no_curlrc == 1 && l.pretty == 0 && l.capture == 0);
-  CHECK(l.hover_ms == 300 && l.remember == 1 && l.win_w == 1500 && l.win_h == 900);
+  CHECK(l.hover_ms == 300 && l.reopen_tabs == 0 && l.win_w == 1500 && l.win_h == 900);
   CHECK_STR(l.program, s.program);
   CHECK_STR(l.config_file, s.config_file);
 #ifndef _WIN32

@@ -148,7 +148,7 @@ static void view_params(app_t *a, struct nk_rect r)
 }
 
 /* The forms' own rows are read again whenever the request changed some other way. */
-static unsigned long request_sig(const request *q)
+unsigned long form_request_sig(const request *q)
 {
   unsigned long h = 2166136261u;
   const char *s;
@@ -255,7 +255,7 @@ static void view_headers(app_t *a, struct nk_rect r)
   tab_t *t = CUR(a);
   if(form_kv_table(a, r, &t->header_rows, "name", "value", options_find("header"), 0)) {
     form_headers_set(&t->req, &t->hints, &t->header_rows);
-    t->form_sig = request_sig(&t->req);
+    t->form_sig = form_request_sig(&t->req);
   }
 }
 
@@ -295,7 +295,7 @@ static void view_body(app_t *a, struct nk_rect r)
     free(keep);
     k = to;
     a->pending_unfocus = 1;
-    t->form_sig = request_sig(&t->req);
+    t->form_sig = form_request_sig(&t->req);
   }
   area = nk_rect(r.x, r.y + 34, r.w, r.h - 34);
   if(k == BODY_NONE)
@@ -330,7 +330,7 @@ static void view_body(app_t *a, struct nk_rect r)
         after = (after ^ (unsigned char)*c) * 16777619u;
       if(after != before) {
         form_body_set(&t->req, BODY_FILE, NULL, t->body_file, err, sizeof(err));
-        t->form_sig = request_sig(&t->req);
+        t->form_sig = form_request_sig(&t->req);
       }
     }
   }
@@ -339,7 +339,7 @@ static void view_body(app_t *a, struct nk_rect r)
     if(form_kv_table(a, area, &t->body_rows, "name", k == BODY_FORMDATA ? "value or path" : "value", opt, k == BODY_FORMDATA)) {
       t->body_choice = k;
       form_body_set(&t->req, k, &t->body_rows, NULL, err, sizeof(err));
-      t->form_sig = request_sig(&t->req);
+      t->form_sig = form_request_sig(&t->req);
     }
   }
 }
@@ -414,7 +414,7 @@ static void view_auth(app_t *a, struct nk_rect r)
     t->auth_error[0] = '\0';
     form_auth_set(&t->req, &t->hints, k, t->auth_a, t->auth_b, t->auth_query ? "query" : "header", t->auth_error,
                   sizeof(t->auth_error));
-    t->form_sig = request_sig(&t->req);
+    t->form_sig = form_request_sig(&t->req);
   }
   if(t->auth_error[0]) {
     ui_text_fit(a, a->f.small, r.x, y, 18, r.w, t->auth_error, p->red);
@@ -431,7 +431,7 @@ static void view_auth(app_t *a, struct nk_rect r)
 void view_form(app_t *a, struct nk_rect r)
 {
   tab_t *t = CUR(a);
-  unsigned long sig = request_sig(&t->req);
+  unsigned long sig = form_request_sig(&t->req);
   form_params_sync(t);
   if(sig != t->form_sig && !t->form_focus) {
     forms_read(t);
@@ -454,4 +454,9 @@ void view_form(app_t *a, struct nk_rect r)
   default:
     break;
   }
+}
+
+void view_history(app_t *a, struct nk_rect r)
+{
+  ui_text_fit(a, a->f.small, r.x + 12, r.y, 22, r.w - 24, "History", a->pal.dim);
 }

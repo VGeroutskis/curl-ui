@@ -124,7 +124,8 @@ void view_frame(app_t *a)
   struct nk_vec2 saved_scroll = in->mouse.scroll_delta;
   int menu_was_open = CUR(a)->method_menu;
   int env_was_open = a->env_menu;
-  int modal_was_open = a->modal_open;
+  int modal_was_open = a->modal_open || a->dlg != DLG_NONE;
+  int tree_was_open = a->tree_menu != NULL;
 
   a->big_paste = 0;
   a->cursor = CURSOR_ARROW;
@@ -137,9 +138,11 @@ void view_frame(app_t *a)
   /* The popup goes first and takes the input, so nothing below reacts. */
   if(a->show_settings)
     CUR(a)->method_menu = menu_was_open = 0;
-  if(modal_was_open)
-    menu_was_open = env_was_open = CUR(a)->method_menu = a->env_menu = 0;
-  if(menu_was_open || env_was_open || modal_was_open) {
+  if(modal_was_open) {
+    menu_was_open = env_was_open = tree_was_open = CUR(a)->method_menu = a->env_menu = 0;
+    a->tree_menu = NULL;
+  }
+  if(menu_was_open || env_was_open || modal_was_open || tree_was_open) {
     const struct nk_mouse_button *b = &in->mouse.buttons[NK_BUTTON_LEFT];
     if(menu_was_open && b->clicked && !b->down) {
       int item = center_menu_item_at(a, center, in->mouse.pos);
@@ -151,6 +154,8 @@ void view_frame(app_t *a)
       env_menu_pick(a, env_menu_item_at(a, in->mouse.pos));
       a->env_menu = 0;
     }
+    if(tree_was_open && b->clicked && !b->down)
+      tree_menu_click(a, in->mouse.pos);
     in->mouse.pos = nk_vec2(-1000, -1000);
     in->mouse.buttons[NK_BUTTON_LEFT].clicked = 0;
     in->mouse.buttons[NK_BUTTON_LEFT].down = 0;
@@ -166,7 +171,7 @@ void view_frame(app_t *a)
     view_header(a, nk_rect(0, 0, a->W, HEADER_H));
     view_tabs(a, nk_rect(0, HEADER_H, a->W, TABS_H));
     /* draw order is nk_edit identity: fixed edits come before the card list */
-    view_library(a, nk_rect(0, top, lib_w, a->H - top));
+    view_sidebar(a, nk_rect(0, top, lib_w, a->H - top));
     if(a->notice[0]) {
       const palette *p = &a->pal;
       struct nk_rect bar = nk_rect(center.x, center.y, center.w, 30);
@@ -193,15 +198,24 @@ void view_frame(app_t *a)
       in->mouse.pos = saved_pos;
       env_menu_draw(a);
     }
-    if(modal_was_open && a->modal_open) {
+    if(tree_was_open && a->tree_menu) {
+      in->mouse.pos = saved_pos;
+      tree_menu_draw(a);
+    }
+    if(modal_was_open && (a->modal_open || a->dlg != DLG_NONE)) {
       in->mouse.pos = saved_pos;
       in->mouse.buttons[NK_BUTTON_LEFT] = saved_left;
       in->mouse.scroll_delta = saved_scroll;
-      view_modal(a);
+      if(a->modal_open)
+        view_modal(a);
+      else
+        view_dialog(a);
     }
     nk_layout_space_end(ctx);
   }
   nk_end(ctx);
+  dialog_run_pending(a);
+  app_tabs_update_dirty(a);
   if(a->modal_pending != MODAL_NONE) {
     modal_action act = a->modal_pending;
     a->modal_pending = MODAL_NONE;
