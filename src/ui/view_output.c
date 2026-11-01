@@ -302,7 +302,9 @@ void view_output(app_t *a, struct nk_rect r)
     ui_clamp_scroll(&a->out_scroll, content, body.h);
 
     if(!wc->nrows) {
-      if(running)
+      if(a->url_missing)
+        empty_state(a, body, "curl needs a URL to run", "Type it in the bar at the top, then press Run.");
+      else if(running)
         empty_state(a, body, "Waiting for the server…", "Output appears here as it arrives.");
       else if(a->tab == TAB_LOG)
         empty_state(a, body, "No transfer log yet", "Every run records what curl sent and received here.");

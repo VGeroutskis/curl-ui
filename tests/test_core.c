@@ -197,6 +197,45 @@ static void test_builder(void)
   free(prev);
 }
 
+static void test_url_checks(void)
+{
+  request r;
+  sel_option *s;
+  request_init(&r);
+  CHECK(request_lacks_url(&r));
+  s = request_add(&r, options_find("abstract-unix-socket"));
+  snprintf(s->values[0], BUILDER_VALUE_CAP, "https://examples.com");
+  CHECK(request_lacks_url(&r));
+  s = request_add(&r, options_find("url"));
+  CHECK(request_lacks_url(&r));  /* --url with no value yet */
+  snprintf(s->values[0], BUILDER_VALUE_CAP, "http://x/");
+  CHECK(!request_lacks_url(&r));
+  request_clear_options(&r);
+  request_add(&r, options_find("version"));
+  CHECK(!request_lacks_url(&r));
+  request_clear_options(&r);
+  request_add(&r, options_find("help"));  /* its value is optional */
+  CHECK(!request_lacks_url(&r));
+  request_clear_options(&r);
+  r.config_file = "my.conf";
+  CHECK(!request_lacks_url(&r));
+  r.config_file = NULL;
+  snprintf(r.url, sizeof(r.url), "http://x/");
+  CHECK(!request_lacks_url(&r));
+  request_free(&r);
+
+  CHECK(value_looks_like_url("https://examples.com"));
+  CHECK(value_looks_like_url("ftp://a"));
+  CHECK(value_looks_like_url("www.example.com"));
+  CHECK(!value_looks_like_url(""));
+  CHECK(!value_looks_like_url("socketpath"));
+  CHECK(!value_looks_like_url("/tmp/file"));
+  CHECK(!value_looks_like_url("name:secret"));
+  CHECK(!value_looks_like_url("http://"));
+  CHECK(!value_looks_like_url("://x"));
+  CHECK(!value_looks_like_url("X-Header: http://a"));
+}
+
 static void test_win_quoting_rules(void)
 {
   const char *a1[] = { "p", "plain", "with space", "", "q\"uote", "tail\\", "sp \\", "a\\\\\"b", NULL };
@@ -879,6 +918,7 @@ int main(int argc, char **argv)
   g_curl = argc > 2 ? argv[2] : NULL;
   test_options();
   test_builder();
+  test_url_checks();
   test_win_quoting_rules();
   test_outbuf();
   test_outbuf_threads();

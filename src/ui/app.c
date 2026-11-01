@@ -205,6 +205,12 @@ void app_run(app_t *a)
     return;
   app_clear_output(a);
   app_rebuild_args(a);
+  /* curl would only say "no URL specified"; say where it goes instead */
+  a->url_missing = request_lacks_url(&a->req);
+  if(a->url_missing) {
+    a->tab = TAB_RESPONSE;
+    return;
+  }
 
   have_v = request_find(&a->req, options_find("verbose")) >= 0 ||
            request_find(&a->req, options_find("trace")) >= 0 ||
@@ -370,6 +376,16 @@ void app_apply_actions(app_t *a)
       break;
     case ACT_RUN:
       app_run(a);
+      break;
+    case ACT_USE_AS_URL:
+      a->pending_unfocus = 1;
+      slot = request_find(&a->req, act->a);
+      if(slot >= 0 && act->b < a->req.sel[slot].nvalues) {
+        char *v = a->req.sel[slot].values[act->b];
+        snprintf(a->req.url, sizeof(a->req.url), "%s", v);
+        v[0] = '\0';
+      }
+      a->url_missing = 0;
       break;
     case ACT_STOP:
       app_stop(a);

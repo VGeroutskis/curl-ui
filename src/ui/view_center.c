@@ -41,6 +41,19 @@ static int conflict_text(const app_t *a, int opt, char *out, size_t n)
   return count;
 }
 
+/* A value that looks like a URL while the URL bar is empty is almost certainly
+   in the wrong place. --url itself is the right place. */
+static int url_value_slot(const app_t *a, const sel_option *s)
+{
+  int j;
+  if(a->req.url[0] || !strcmp(g_options[s->opt].name, "url"))
+    return -1;
+  for(j = 0; j < s->nvalues; j++)
+    if(value_looks_like_url(s->values[j]))
+      return j;
+  return -1;
+}
+
 static float card_height(const app_t *a, const sel_option *s)
 {
   const opt_def *o = &g_options[s->opt];
@@ -55,6 +68,8 @@ static float card_height(const app_t *a, const sel_option *s)
   if(conflict_text(a, s->opt, tmp, sizeof(tmp)))
     h += 28;
   if(!app_option_supported(a, s->opt))
+    h += 28;
+  if(url_value_slot(a, s) >= 0)
     h += 28;
   return h;
 }
@@ -148,6 +163,16 @@ static void draw_card(app_t *a, struct nk_rect r, sel_option *s)
     snprintf(tmp, sizeof(tmp), "Your curl %s does not know this option; it needs %s or newer",
              a->curl.version, o->added);
     warn_bar(a, x, &y, w, tmp);
+  }
+
+  {
+    int slot = url_value_slot(a, s);
+    if(slot >= 0) {
+      struct nk_rect use = nk_rect(x + w - 92, y + 2, 88, 20);
+      warn_bar(a, x, &y, w - 96, "This looks like a URL, and the URL bar is empty");
+      if(ui_button(a, use, "Use as URL", BTN_PRIMARY))
+        app_push(a, ACT_USE_AS_URL, s->opt, slot);
+    }
   }
 
   if(o->arg[0]) {
@@ -468,6 +493,10 @@ void view_center(app_t *a, struct nk_rect r)
                "https://example.com", a->f.mono, NK_EDIT_SIG_ENTER);
   if((st & NK_EDIT_COMMITED) && !running)
     app_push(a, ACT_RUN, 0, 0);
+  if(a->req.url[0] || !request_lacks_url(&a->req))
+    a->url_missing = 0;
+  if(a->url_missing)
+    ui_stroke(a, nk_rect(mb.x + mb.w + 6, y, w - mb.w - 76 - 12, 34), 5, p->amber);
   if(ui_button(a, run, running ? "Stop" : "Run", running ? BTN_DANGER : BTN_PRIMARY))
     app_push(a, running ? ACT_STOP : ACT_RUN, 0, 0);
   y += 42;

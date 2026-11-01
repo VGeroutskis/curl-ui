@@ -239,6 +239,41 @@ const char **arg_list_argv(const arg_list *l, const char *const *extra)
   return argv;
 }
 
+int request_lacks_url(const request *r)
+{
+  static const char *const enough[] = {
+    "url", "config", "help", "version", "manual", NULL
+  };
+  int i;
+  if(r->url[0] || (r->config_file && r->config_file[0]))
+    return 0;
+  for(i = 0; enough[i]; i++) {
+    int slot = request_find(r, options_find(enough[i]));
+    if(slot < 0)
+      continue;
+    if(!g_options[r->sel[slot].opt].arg[0] || !strcmp(enough[i], "help"))
+      return 0;
+    {
+      int j;
+      for(j = 0; j < r->sel[slot].nvalues; j++)
+        if(r->sel[slot].values[j][0])
+          return 0;
+    }
+  }
+  return 1;
+}
+
+int value_looks_like_url(const char *v)
+{
+  const char *p = v;
+  if(!strncmp(v, "www.", 4) && v[4])
+    return 1;
+  while((*p >= 'a' && *p <= 'z') || (*p >= 'A' && *p <= 'Z') || (*p >= '0' && *p <= '9') ||
+        *p == '+' || *p == '-' || *p == '.')
+    p++;
+  return p > v && p[0] == ':' && p[1] == '/' && p[2] == '/' && p[3];
+}
+
 char *shell_quote(const char *arg)
 {
   static const char safe[] =

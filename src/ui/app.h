@@ -47,7 +47,7 @@ typedef struct {
 
 typedef enum {
   ACT_NONE, ACT_TOGGLE, ACT_REMOVE, ACT_ADD_VALUE, ACT_REMOVE_VALUE, ACT_SET_NEG,
-  ACT_CLEAR, ACT_RECIPE, ACT_RUN, ACT_STOP
+  ACT_CLEAR, ACT_RECIPE, ACT_RUN, ACT_STOP, ACT_USE_AS_URL
 } act_kind;
 
 typedef struct {
@@ -115,6 +115,7 @@ typedef struct {
   int show_recipes;
   int method_menu;
   int show_settings;
+  int url_missing;      /* Run was pressed with nothing to fetch */
   nk_uint cards_x, cards_y;
   int cards_focus;
   int cards_focus_prev;

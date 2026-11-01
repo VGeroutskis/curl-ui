@@ -59,6 +59,12 @@ void arg_list_free(arg_list *l);
 /* NULL-terminated argv pointing into l; free() the array only. */
 const char **arg_list_argv(const arg_list *l, const char *const *extra);
 
+/* 1 when curl would stop with "no URL specified": no URL in the bar, and nothing
+   else that supplies one or runs without one (--url, --config, --help, ...). */
+int request_lacks_url(const request *r);
+/* The value starts like a URL: scheme://something, or www.something */
+int value_looks_like_url(const char *value);
+
 /* POSIX shell quoting. Caller frees. */
 char *shell_quote(const char *arg);
 char *builder_preview(const arg_list *l);
