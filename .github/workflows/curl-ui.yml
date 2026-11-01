@@ -2,10 +2,10 @@ name: curl-ui
 
 on:
   push:
-    branches: [curl-ui]
+    branches: [main]
     tags: ['v*']
   pull_request:
-    branches: [curl-ui]
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -19,8 +19,12 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install dependencies
         run: sudo apt-get update && sudo apt-get install -y cmake libsdl2-dev rpm dpkg-dev curl
+      - name: Option table matches the pinned curl release
+        run: |
+          python3 tools/gen_options.py
+          git diff --exit-code src/core/options_data.c
       - name: Configure
-        run: cmake -S ui -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build
         run: cmake --build build -j4
       - name: Test
@@ -31,7 +35,7 @@ jobs:
         run: ./build/curl-ui --add location --docs location --screenshot smoke.bmp && test -s smoke.bmp
       - name: Sanitizers
         run: |
-          cmake -S ui -B build-san -DCMAKE_BUILD_TYPE=Debug -DCURLUI_SANITIZE=ON -DCURLUI_BUILD_GUI=OFF
+          cmake -S . -B build-san -DCMAKE_BUILD_TYPE=Debug -DCURLUI_SANITIZE=ON -DCURLUI_BUILD_GUI=OFF
           cmake --build build-san -j4
           ctest --test-dir build-san --output-on-failure
       - name: Package
@@ -65,7 +69,7 @@ jobs:
       - name: Install NSIS
         run: choco install nsis -y --no-progress
       - name: Configure
-        run: cmake -S ui -B build -A x64
+        run: cmake -S . -B build -A x64
       - name: Build
         run: cmake --build build --config Release -j4
       - name: Test
@@ -105,7 +109,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Configure
-        run: cmake -S ui -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
       - name: Build
         run: cmake --build build -j4
       - name: Test

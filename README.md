@@ -5,6 +5,9 @@ SDL2 and Nuklear. All 278 command line options, each with curl's own
 documentation one mouse movement away. It runs your real `curl` binary and
 re-implements nothing.
 
+curl UI is an independent project and is not part of curl. The curl program is
+not included: packages depend on it, and the app uses the one on your system.
+
 ## Install
 
 Download from the [releases page](../../releases), or the artifacts of the
@@ -86,7 +89,7 @@ Requires CMake 3.16 or newer and a C11 compiler.
 ```sh
 # Fedora: sudo dnf install cmake gcc sdl2-compat-devel rpm-build
 # Debian: sudo apt install cmake gcc libsdl2-dev dpkg-dev
-cmake -S ui -B build
+cmake -S . -B build
 cmake --build build -j
 ctest --test-dir build --output-on-failure
 ./build/curl-ui
@@ -104,9 +107,13 @@ Generated files are committed, so building needs no Python:
 
 | Regenerate | With | Needs |
 |---|---|---|
-| `src/core/options_data.c` | `tools/gen_options.py` | Python |
+| `src/core/options_data.c` | `tools/gen_options.py` | Python, git, network |
 | `src/ui/fonts_data.{c,h}` | `tools/build_fonts.py` | `pip install fonttools brotli` |
 | `packaging/curl-ui.{png,ico,icns}` | `tools/build_icons.py` | `pip install pillow` |
+
+The option table comes from the curl release named in `tools/curl-ref.txt`. To
+move to a newer curl, change that file, run `tools/gen_options.py`, and run the
+tests. CI fails if the committed table differs from what that release generates.
 
 ## Testing
 
@@ -148,7 +155,6 @@ saves the image and exits; `SDL_VIDEODRIVER=dummy` makes that work headless.
 ## Layout
 
 ```
-ui/
   src/core/       no SDL, unit tested
     options*      the option table and search
     builder       options -> argv, shell-quoted preview

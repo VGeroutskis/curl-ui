@@ -22,7 +22,6 @@ kind of use or are ordinary GETs. Everything else is local, see servers.py.
 """
 import argparse
 import concurrent.futures
-import glob
 import os
 import re
 import shutil
@@ -37,7 +36,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import servers  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DOCS = os.path.join(HERE, "..", "..", "..", "docs", "cmdline-opts")
+OPTIONS_DATA = os.path.join(HERE, "..", "..", "src", "core", "options_data.c")
 HB = "https://httpbin.org"
 REBEX = "test.rebex.net"
 CASES = []
@@ -630,13 +629,8 @@ def run_with_retry(c, opts, ctx, record):
 
 
 def all_option_names():
-    names = set()
-    for path in glob.glob(os.path.join(DOCS, "*.md")):
-        with open(path, encoding="utf-8") as f:
-            m = re.search(r"^Long: *(\S+)", f.read(), re.M)
-        if m:
-            names.add(m.group(1))
-    return names
+    with open(OPTIONS_DATA, encoding="utf-8") as f:
+        return set(re.findall(r'^\{ "([a-z0-9.-]+)",', f.read(), re.M))
 
 
 def main():
