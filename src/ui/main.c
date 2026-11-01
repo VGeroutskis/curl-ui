@@ -967,8 +967,14 @@ int main(int argc, char **argv)
     return 1;
   }
   SDL_SetWindowMinimumSize(g_window, MIN_W, MIN_H);
-  if(a->own_frame && SDL_SetWindowHitTest(g_window, hit_test, a) && g_trace)
-    fprintf(stderr, "no hit test: %s\n", SDL_GetError());
+  /* Where a system cannot do this, our bar could not move the window: its own bar comes back.
+     The dummy driver of the tests has neither, and nobody to drag it. */
+  if(a->own_frame && SDL_SetWindowHitTest(g_window, hit_test, a) && strcmp(SDL_GetCurrentVideoDriver(), "dummy")) {
+    if(g_trace)
+      fprintf(stderr, "no hit test: %s\n", SDL_GetError());
+    a->own_frame = 0;
+    SDL_SetWindowBordered(g_window, SDL_TRUE);
+  }
   if(screenshot)
     render_flags = SDL_RENDERER_SOFTWARE;
   g_renderer = SDL_CreateRenderer(g_window, -1, render_flags);
