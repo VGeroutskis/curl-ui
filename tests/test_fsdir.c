@@ -8,6 +8,28 @@
 #include "fsdir.h"
 #include "options.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
+/* The test program has no UTF-8 code page, unlike the app: a Greek name takes the wide call. */
+static int write_named(const char *path)
+{
+#ifdef _WIN32
+  wchar_t w[1024];
+  FILE *f;
+  MultiByteToWideChar(CP_UTF8, 0, path, -1, w, 1024);
+  f = _wfopen(w, L"wb");
+  if(!f)
+    return -1;
+  fputs("12345", f);
+  fclose(f);
+  return 0;
+#else
+  return file_write_private(path, "12345", 5);
+#endif
+}
+
 static int fails;
 #define CHECK(c) do { if(!(c)) { fprintf(stderr, "%s:%d: %s\n", __FILE__, __LINE__, #c); fails++; } } while(0)
 #define CHECK_STR(a, b) do { const char *x_ = (a), *y_ = (b); \
@@ -25,12 +47,15 @@ static void test_listing(const char *scratch)
   fs_listing l;
   char err[256];
   char *base = fs_join(scratch, "pick"), *p;
+  p = fs_join(base, "x");
+  file_make_parents(p);
+  free(p);
   /* a Greek name, upper and lower case, a folder that sorts after the files by name */
   static const char *const files[] = { "b.txt", "A.txt", "\xCE\xB1\xCF\x81\xCF\x87\xCE\xB5\xCE\xAF\xCE\xBF.json", ".secret" };
   size_t i;
   for(i = 0; i < sizeof(files) / sizeof(files[0]); i++) {
     p = fs_join(base, files[i]);
-    CHECK(!file_write_private(p, "12345", 5));
+    CHECK(!write_named(p));
     free(p);
   }
   p = fs_join(base, "zdir/x");

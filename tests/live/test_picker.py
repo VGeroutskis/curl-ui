@@ -14,7 +14,7 @@ import threading
 seen = []
 
 # at --size 1440x900; the picker is 760x560 and centred
-PATH = "600,230"
+PATH = "1075,230"  # past the end of the text, where typing goes on
 NAME = "600,660"
 OK = "1050,704"
 CANCEL = "960,704"
