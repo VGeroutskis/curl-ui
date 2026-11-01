@@ -44,7 +44,9 @@ jobs:
         run: |
           cmake -S . -B build-san -DCMAKE_BUILD_TYPE=Debug -DCURLUI_SANITIZE=ON -DCURLUI_BUILD_GUI=OFF
           cmake --build build-san -j4
-          ctest --test-dir build-san --output-on-failure
+          # all_args spawns ASan processes by the thousand, which takes over 8 minutes
+          # on the ARM runner against 33 seconds on x86_64, where it still runs
+          ctest --test-dir build-san --output-on-failure ${{ matrix.arch == 'aarch64' && '-E all_args' || '' }}
       - name: Package
         run: cd build && cpack
       - name: Inspect packages
@@ -169,7 +171,8 @@ jobs:
         env:
           SDL_VIDEODRIVER: dummy
         run: |
-          hdiutil attach build/*.dmg -mountpoint /tmp/curl-ui-dmg -nobrowse
+          # the .dmg shows the license first; answer it, as a person would
+          yes | PAGER=cat hdiutil attach build/*.dmg -mountpoint /tmp/curl-ui-dmg -nobrowse
           "/tmp/curl-ui-dmg/curl UI.app/Contents/MacOS/curl UI" --docs location --screenshot "$PWD/dmg.bmp"
           test -s dmg.bmp
           hdiutil detach /tmp/curl-ui-dmg
