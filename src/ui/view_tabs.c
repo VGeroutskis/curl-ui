@@ -60,6 +60,7 @@ void view_tabs(app_t *a, struct nk_rect r)
     if(close != i && hover) {
       a->cursor = CURSOR_HAND;
       if(ui_clicked(a, box) && !current) {
+        CUR(a)->reveal = 0;
         a->cur = i;
         a->show_vars = 0;
         a->pending_unfocus = 1;

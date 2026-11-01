@@ -220,8 +220,10 @@ void view_output(app_t *a, struct nk_rect r)
     app_clear_output(a);
   right -= 46;
   if(ui_button(a, nk_rect(right, r.y + 5, 44, 22), "Copy", BTN_GHOST)) {
-    char *text = outbuf_join(src, NULL);
+    size_t text_len = 0;
+    char *text = outbuf_join(src, &text_len);
     if(text) {
+      mask_apply(CUR(a)->mask, text, text_len);
       ui_copy(text);
       free(text);
     }
@@ -323,9 +325,17 @@ void view_output(app_t *a, struct nk_rect r)
         const wrap_row *row = &wc->rows[i];
         size_t len;
         const char *line = outbuf_line_locked(src, row->line, &len);
+        static char masked[OUTBUF_MAX_LINE + 1];
         float y = base + (float)i * ROW_H + (ROW_H - a->f.mono_small->height) / 2;
         if((size_t)row->off + row->len > len)
           continue;
+        /* same length, so the wrapped rows still line up */
+        if(CUR(a)->mask && len < sizeof(masked)) {
+          memcpy(masked, line, len);
+          masked[len] = '\0';
+          mask_apply(CUR(a)->mask, masked, len);
+          line = masked;
+        }
         if(CUR(a)->out_tab == TAB_LOG)
           ui_text(a, a->f.mono_small, tx, y, line + row->off, (int)row->len, log_color(p, line, len));
         else if(showing_pretty && row->line >= CUR(a)->pretty_header_lines)

@@ -392,8 +392,9 @@ static int layout_command(app_t *a, float x0, float y0, float w, int draw)
   int col = 0, row = 0, i;
   if(cols < 10)
     cols = 10;
-  for(i = 0; i < CUR(a)->args.count; i++) {
-    const arg_token *t = &CUR(a)->args.tok[i];
+  const arg_list *shown = CUR(a)->reveal ? &CUR(a)->args_real : &CUR(a)->args;
+  for(i = 0; i < shown->count; i++) {
+    const arg_token *t = &shown->tok[i];
     char *q = token_preview(t->text);
     size_t len, off = 0;
     int glyphs = 0;
@@ -444,6 +445,10 @@ static void draw_command(app_t *a, struct nk_rect r)
   const palette *p = &a->pal;
   struct nk_rect copy = nk_rect(r.x + r.w - 58, r.y + 5, 50, 22);
   int rows = layout_command(a, 0, 0, r.w - 24, 0);
+  int has_secret = 0, k;
+  for(k = 0; k < CUR(a)->args.count && k < CUR(a)->args_real.count; k++)
+    if(strcmp(CUR(a)->args.tok[k].text, CUR(a)->args_real.tok[k].text))
+      has_secret = strstr(CUR(a)->args.tok[k].text, "********") != NULL || has_secret;
   ui_rect(a, r, 7, p->card);
   ui_stroke(a, r, 7, p->border);
   ui_text_fit(a, a->f.semi, r.x + 12, r.y + 6, 20, 120, "Command", p->text);
@@ -452,11 +457,22 @@ static void draw_command(app_t *a, struct nk_rect r)
     if(prev) {
       ui_copy(prev);
       free(prev);
+      if(has_secret)
+        CUR(a)->copied_secret_at = a->now_ms ? a->now_ms : 1;
     }
+  }
+  if(has_secret && ui_eye(a, nk_rect(copy.x - 32, copy.y, 28, 22), CUR(a)->reveal))
+    CUR(a)->reveal = !CUR(a)->reveal;
+  if(CUR(a)->copied_secret_at) {
+    if(a->now_ms - CUR(a)->copied_secret_at < 3000) {
+      ui_text_fit(a, a->f.small, r.x + 90, r.y + 6, 20, r.w - 90 - 110, "Copied with real secret values", p->amber);
+    }
+    else
+      CUR(a)->copied_secret_at = 0;
   }
   layout_command(a, r.x + 12, r.y + 31, r.w - 24, 1);
   if(rows > CMD_MAX_ROWS)
-    ui_text_fit(a, a->f.small, r.x + r.w - 150, r.y + 6, 20, 88, "continues; Copy has it all", p->faint);
+    ui_text_fit(a, a->f.small, r.x + r.w - 150, r.y + 6, 20, 88, "continues; Copy has it", p->faint);
 }
 
 static float command_height(app_t *a, float w)

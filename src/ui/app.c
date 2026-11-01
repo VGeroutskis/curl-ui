@@ -79,6 +79,7 @@ static void tab_free(tab_t *t)
   arg_list_free(&t->args_tmpl);
   arg_list_free(&t->args_real);
   arg_list_free(&t->args);
+  mask_free(t->mask);
   outbuf_free(t->out);
   outbuf_free(t->log);
   outbuf_free(t->pretty_buf);
@@ -323,6 +324,8 @@ void app_run(app_t *a)
     }
     str_list_free(&missing);
   }
+  mask_free(CUR(a)->mask);
+  CUR(a)->mask = mask_build(&a->vars.e[a->vars.active], &CUR(a)->args_real);
 
   have_v = request_find(&CUR(a)->req, options_find("verbose")) >= 0 ||
            request_find(&CUR(a)->req, options_find("trace")) >= 0 ||

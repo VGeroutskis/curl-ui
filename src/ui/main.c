@@ -321,6 +321,7 @@ static void run_script(app_t *a, const script_op *ops, int n)
       settle(a);
       break;
     case SC_SELECT_TAB:
+      CUR(a)->reveal = 0;
       if(op->x >= 0 && op->x < a->ntabs)
         a->cur = op->x;
       a->pending_unfocus = 1;
@@ -368,9 +369,13 @@ static void run_script(app_t *a, const script_op *ops, int n)
 static int write_dump(app_t *a, const char *path)
 {
   FILE *f = fopen(path, "wb");
-  char *cmd = builder_preview(&CUR(a)->args);
-  char *out = outbuf_join(CUR(a)->out, NULL);
-  char *log = outbuf_join(CUR(a)->log, NULL);
+  char *cmd = builder_preview(CUR(a)->reveal ? &CUR(a)->args_real : &CUR(a)->args);
+  char *real = builder_preview(&CUR(a)->args_real);
+  size_t out_len = 0, log_len = 0;
+  char *out = outbuf_join(CUR(a)->out, &out_len);
+  char *log = outbuf_join(CUR(a)->log, &log_len);
+  mask_apply(CUR(a)->mask, out, out_len);
+  mask_apply(CUR(a)->mask, log, log_len);
   int i;
   if(f) {
     fprintf(f, "exit=%d\nhad_result=%d\nhttp=%d\nstats=%d\nsize=%lld\nurl_missing=%d\n", CUR(a)->exit_code, CUR(a)->has_result,
@@ -386,12 +391,16 @@ static int write_dump(app_t *a, const char *path)
     fputc('\n', f);
     fprintf(f, "command=%s\n---stdout---\n%s\n---log---\n%s\n", cmd ? cmd : "", out ? out : "", log ? log : "");
     for(i = 0; i < a->ntabs; i++) {
-      char *text = outbuf_join(a->tabs[i]->out, NULL);
+      size_t text_len = 0;
+      char *text = outbuf_join(a->tabs[i]->out, &text_len);
+      mask_apply(a->tabs[i]->mask, text, text_len);
       fprintf(f, "===tab %d exit=%d http=%d\n%s\n", i, a->tabs[i]->exit_code, a->tabs[i]->http_status, text ? text : "");
       free(text);
     }
+    fprintf(f, "copy_command=%s\n", real ? real : "");
     fclose(f);
   }
+  free(real);
   free(cmd);
   free(out);
   free(log);
@@ -632,6 +641,8 @@ int main(int argc, char **argv)
       if(found >= 0)
         a->vars.active = found;
     }
+    else if(!strcmp(arg, "--reveal"))
+      CUR(a)->reveal = 1;
     else if(!strcmp(arg, "--open-vars"))
       a->show_vars = 1;
     else if((!strcmp(arg, "--modal-value") || !strcmp(arg, "--modal-action")) && nops < MAX_SCRIPT) {
@@ -857,8 +868,11 @@ int main(int argc, char **argv)
       if(ev.type == SDL_QUIT)
         a->quit = 1;
       if(ev.type == SDL_KEYDOWN && (ev.key.keysym.mod & (KMOD_CTRL | KMOD_GUI)) && !a->modal_open) {
-        if(ev.key.keysym.sym == SDLK_t && tab_new(a) >= 0)
-          a->pending_unfocus = 1;
+        if(ev.key.keysym.sym == SDLK_t) {
+          CUR(a)->reveal = 0;
+          if(tab_new(a) >= 0)
+            a->pending_unfocus = 1;
+        }
         else if(ev.key.keysym.sym == SDLK_w)
           tab_close(a, a->cur);
         else if(ev.key.keysym.sym == SDLK_RETURN && !CUR(a)->proc)

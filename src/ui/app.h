@@ -10,6 +10,7 @@
 #include "builder.h"
 #include "curlinfo.h"
 #include "docs.h"
+#include "mask.h"
 #include "options.h"
 #include "outbuf.h"
 #include "settings.h"
@@ -86,6 +87,9 @@ typedef struct {
   arg_list args_real;   /* what curl gets */
   arg_list args;        /* what is on screen: secrets hidden, tokens parallel to the others */
   int dirty;            /* differs from what is saved */
+  int reveal;           /* the eye on the command: real values, until the tab changes */
+  unsigned long copied_secret_at;  /* when Copy took real secret values, for a short note */
+  mask_set *mask;       /* the secrets of the last run, hidden in its output */
   int run_at_start;     /* scripted: --run */
 
   /* centre */

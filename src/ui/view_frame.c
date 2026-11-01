@@ -214,7 +214,7 @@ void view_frame(app_t *a)
 
   /* Docs follow the mouse, after a short dwell: moving across the middle
      column on the way to read them must not replace what is being read. */
-  a->wants_timer = 0;
+  a->wants_timer = CUR(a)->copied_secret_at != 0;
   if(a->hover_frame != a->hover_cand) {
     a->hover_cand = a->hover_frame;
     a->hover_since = a->now_ms;
