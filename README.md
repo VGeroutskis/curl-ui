@@ -1,14 +1,22 @@
 # curl UI
 
-A native desktop front end for [curl](https://curl.se), written in C11 with
-SDL2 and Nuklear. All 278 command line options, each with curl's own
-documentation one mouse movement away. It runs your real `curl` binary and
-re-implements nothing.
+A native desktop API client built on [curl](https://curl.se), written in C11 with
+SDL2 and Nuklear. Tabs, collections, environments, secrets, history and forms, plus
+all 278 command line options, each with curl's own documentation one mouse movement
+away. It runs your real `curl` binary and re-implements nothing.
 
 curl UI is an independent project and is not part of curl. The curl program is
 not included: packages depend on it, and the app uses the one on your system.
 
-![curl UI: the option library, a request with its exact command and response, and curl's documentation for the option in focus](docs/screenshots/main.png)
+![curl UI: a saved request in its collection, the Headers form, the exact command with its secret hidden, the response, and curl's documentation](docs/screenshots/main.png)
+
+## Get started
+
+1. [Install it](#install), and open the app.
+2. Type a URL and press Run. The Response tab shows the result.
+3. Fill in Params, Headers, Body or Auth, or add any curl option from Options on the left.
+4. Write `{{name}}` wherever a value changes between environments. The first run asks for it.
+5. Press Ctrl/Cmd+S to keep the request in a collection.
 
 ## Why use it
 
@@ -99,6 +107,13 @@ it is not on `PATH`, click the version pill in the header and enter its path und
 - **Right:** hover a library row, a card, a form row or a flag in the command and that
   option's full documentation appears, and stays while you move over to read. Every
   `--option` in it is a link.
+
+| Keys | Action |
+|---|---|
+| Ctrl/Cmd+Enter | run |
+| Ctrl/Cmd+S | save the request |
+| Ctrl/Cmd+T | new tab |
+| Ctrl/Cmd+W | close the tab |
 
 ### Forms and options
 
@@ -265,7 +280,7 @@ runner, then through a real curl that parses it and stops before any transfer.
 
 `tests/live/test_*.py --ui build/curl-ui` drive the real app and judge it by what a local
 server receives: large values, tabs, variables and secrets, the forms, saving and history,
-and importing. They need only Python, and CI runs them on every platform.
+importing, and bugs found in review. They need only Python, and CI runs them on every platform.
 
 `tests/live/live_options.py --ui build/curl-ui` goes further: each of the 278
 options is added to the real app, run, and judged by what came back, from public
@@ -332,14 +347,15 @@ saves the image and exits; `SDL_VIDEODRIVER=dummy` makes that work headless.
     json_fmt      strict JSON validator and pretty printer
     curlinfo      detects the installed curl and what it supports
     docs          curl's markdown-lite -> styled blocks
-    settings      settings file and remembered request
+    settings      settings file
     osthread.h    portable thread and mutex
-  src/ui/         SDL + Nuklear: main loop, theme, views
-  tests/          ctest: test_core and the echoargs helper
+  src/ui/         SDL + Nuklear: main loop, theme, views, saving
+  tests/          ctest: test_core, test_args, test_api and the echoargs helper
+  tests/live/     the real app against servers
   tools/          generators
   third_party/    vendored Nuklear (commit in NUKLEAR_COMMIT)
   assets/fonts/   font sources and their licenses
-  packaging/      icons, .desktop, Info.plist, .rc
+  packaging/      icons, .desktop, Info.plist, .rc, Windows manifest
 ```
 
 ## Known limitations
@@ -351,12 +367,20 @@ saves the image and exits; `SDL_VIDEODRIVER=dummy` makes that work headless.
   for as long as the run lasts, secrets included, and a crash can leave it until the next start.
 - Hiding secrets in the output is not a guarantee: other encodings, and a value split across
   lines, are not recognised. An `--output` file holds what the server sent.
-- Text meant to be sent as a literal `{{x}}` cannot be: the app asks for its value.
+- On screen, a secret on a very long line can show where the line is split at 4096 bytes, and one
+  over 4096 bytes is not hidden. Copy still hides them. A value is visible while you type it in the
+  prompt for missing variables.
+- Text meant to be sent as a literal `{{x}}` cannot be: the app asks for its value. A variable in
+  the name of a URL encoded body row is not replaced.
 - A value already percent encoded is encoded again when it goes into a query.
 - There is no limit from the app on the size of a value. A body goes through a file, with
   no limit at all. Any other value is limited by what curl reads from a config line: 10 MB,
   or 100 KB before curl 8.2. Past 8 KB a field shows the size, with Replace from clipboard
   and Clear, instead of the text. A copied command with a huge value may be too long for a terminal.
+- Forms: a URL encoded row with no name, or a file row with `,` or `;` in its path, turns the form
+  into Set by options. `-H 'Accept:'`, which removes a header, loses that meaning when another
+  row changes. `?flag` becomes `?flag=` when the Params table changes.
+- Import: `-d ''` loses its empty value, so the request becomes a GET.
 - No native file picker: type paths into the value fields.
 - An option with an empty value is left out of the command, so a deliberately
   empty argument such as `-A ""` cannot be expressed.

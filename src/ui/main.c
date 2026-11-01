@@ -481,6 +481,7 @@ static const char usage[] =
   "  --type TEXT         scripted typing into the focused field (newline is Enter)\n"
   "  --screenshot F.bmp  after the above, save a screenshot and exit\n"
   "  --settings-dir DIR  keep settings in DIR instead of the per-user location\n"
+  "  README.md lists the options for tabs, variables, forms and collections\n"
   "  --stats             print UI time per frame on exit\n";
 
 int main(int argc, char **argv)
