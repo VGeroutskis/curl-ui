@@ -138,10 +138,24 @@ int builder_build(const request *r, const char *program, arg_list *out)
   char flag[160];
   int req_opt = options_find("request");
   int head_opt = options_find("head");
+  int disable_opt = options_find("disable");
+  int disable_slot;
 
   out->tok = NULL;
   out->count = 0;
   fail |= push(out, &cap, program, TOK_PROGRAM, -1);
+
+  /* curl only honours --disable as the very first argument, wherever it was
+     added in the list */
+  disable_slot = request_find(r, disable_opt);
+  if(disable_slot >= 0 && r->sel[disable_slot].negated)
+    disable_slot = -1;
+  if(r->no_curlrc || disable_slot >= 0)
+    fail |= push(out, &cap, "--disable", TOK_FLAG, disable_opt);
+  if(r->config_file && r->config_file[0]) {
+    fail |= push(out, &cap, "--config", TOK_FLAG, options_find("config"));
+    fail |= push(out, &cap, r->config_file, TOK_VALUE, options_find("config"));
+  }
 
   if(r->method[0] && request_find(r, req_opt) < 0) {
     if(!strcmp(r->method, "HEAD")) {
@@ -157,6 +171,8 @@ int builder_build(const request *r, const char *program, arg_list *out)
   for(i = 0; i < r->nsel; i++) {
     const sel_option *s = &r->sel[i];
     const opt_def *o = &g_options[s->opt];
+    if(i == disable_slot)
+      continue;  /* already emitted first */
     if(!o->arg[0]) {
       snprintf(flag, sizeof(flag), "--%s", (s->negated && o->neg[0]) ? o->neg : o->name);
       fail |= push(out, &cap, flag, TOK_FLAG, s->opt);

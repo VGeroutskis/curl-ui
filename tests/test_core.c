@@ -10,6 +10,7 @@
 #include "osthread.h"
 #include "outbuf.h"
 #include "procrun.h"
+#include "settings.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -644,6 +645,151 @@ static void sink_drop(void *u, const char *d, size_t n)
   (void)n;
 }
 
+static void test_settings(void)
+{
+  settings_t s, l;
+  request r, q;
+  int method = 0;
+  char path[512], rpath[512], tmpname[64];
+  const char *base = getenv("TEMP");
+  FILE *f;
+  arg_list args;
+  char *prev;
+
+  settings_defaults(&s);
+  CHECK(s.dark == 1 && s.zoom == 0 && s.pretty == 1 && s.capture == 1 && s.hover_ms == 110);
+  CHECK_STR(s.program, "curl");
+
+  snprintf(tmpname, sizeof(tmpname), "curlui-test-%ld", (long)time(NULL));
+#ifdef _WIN32
+  snprintf(path, sizeof(path), "%s\\%s\\sub\\settings.ini", base ? base : ".", tmpname);
+  snprintf(rpath, sizeof(rpath), "%s\\%s\\sub\\req.txt", base ? base : ".", tmpname);
+#else
+  (void)base;
+  snprintf(path, sizeof(path), "/tmp/%s/sub/settings.ini", tmpname);
+  snprintf(rpath, sizeof(rpath), "/tmp/%s/sub/req.txt", tmpname);
+#endif
+  CHECK(settings_path("/x", "a.ini", tmpname, sizeof(tmpname)) == 0);
+#ifndef _WIN32
+  CHECK_STR(tmpname, "/x/a.ini");
+#endif
+
+  /* a missing file leaves the defaults */
+  settings_defaults(&l);
+  CHECK(settings_load(&l, path) == 0);
+  CHECK(l.dark == 1);
+
+  /* round trip, with characters that need escaping; directories are created */
+  s.dark = 0;
+  s.zoom = 125;
+  snprintf(s.program, sizeof(s.program), "C:\\Program Files\\curl\nodd");
+  snprintf(s.config_file, sizeof(s.config_file), "/home/me/my curl.conf");
+  s.no_curlrc = 1;
+  s.pretty = 0;
+  s.capture = 0;
+  s.hover_ms = 300;
+  s.remember = 1;
+  s.win_w = 1500;
+  s.win_h = 900;
+  CHECK(settings_save(&s, path) == 0);
+  settings_defaults(&l);
+  CHECK(settings_load(&l, path) == 1);
+  CHECK(l.dark == 0 && l.zoom == 125 && l.no_curlrc == 1 && l.pretty == 0 && l.capture == 0);
+  CHECK(l.hover_ms == 300 && l.remember == 1 && l.win_w == 1500 && l.win_h == 900);
+  CHECK_STR(l.program, s.program);
+  CHECK_STR(l.config_file, s.config_file);
+#ifndef _WIN32
+  {
+    /* it can name a config holding secrets: not world readable */
+    char cmd[1200];
+    FILE *p;
+    int mode = 0;
+    snprintf(cmd, sizeof(cmd), "stat -c %%a '%s' 2>/dev/null || stat -f %%Lp '%s'", path, path);
+    p = popen(cmd, "r");
+    if(p) {
+      if(fscanf(p, "%d", &mode) != 1)
+        mode = 0;
+      pclose(p);
+      CHECK(mode == 600);
+    }
+  }
+#endif
+
+  /* a hand-edited file: junk, comments and bad values keep the defaults */
+  f = fopen(path, "wb");
+  CHECK(f != NULL);
+  if(f) {
+    fputs("# comment\n\nnot a pair\n=x\ntheme=light\r\ntext_size=9999\npretty_json=maybe\n"
+          "docs_hover_ms=-5\ncurl_program=\nunknown_key=1\nwindow_width=abc\n", f);
+    fclose(f);
+  }
+  settings_defaults(&l);
+  CHECK(settings_load(&l, path) == 1);
+  CHECK(l.dark == 0);
+  CHECK(l.zoom == 0);
+  CHECK(l.pretty == 1);
+  CHECK(l.hover_ms == 110);
+  CHECK_STR(l.program, "curl");
+  CHECK(l.win_w == 0);
+
+  /* the request round trip */
+  request_init(&r);
+  snprintf(r.url, sizeof(r.url), "https://example.com/a b");
+  snprintf(request_add(&r, options_find("header"))->values[0], BUILDER_VALUE_CAP, "X-A: 1");
+  snprintf(request_add_value(request_add(&r, options_find("header"))), BUILDER_VALUE_CAP, "X: two\nlines\\");
+  request_add(&r, options_find("location"))->negated = 1;
+  request_add(&r, options_find("referer"));
+  CHECK(request_save(&r, 2, rpath) == 0);
+  request_init(&q);
+  CHECK(request_load(&q, &method, rpath) == 1);
+  CHECK(method == 2);
+  CHECK_STR(q.url, r.url);
+  CHECK(q.nsel == 3);
+  if(q.nsel == 3) {
+    CHECK(q.sel[0].nvalues == 2);
+    CHECK_STR(q.sel[0].values[0], "X-A: 1");
+    CHECK_STR(q.sel[0].values[1], "X: two\nlines\\");
+    CHECK(q.sel[1].negated == 1);
+    CHECK(q.sel[2].nvalues == 1 && q.sel[2].values[0][0] == 0);
+  }
+  request_free(&q);
+  /* unknown options and out of range methods from an old or edited file */
+  f = fopen(rpath, "wb");
+  if(f) {
+    fputs("method=99\noption=no-such-option\nvalue=x\noption=location\nvalue=ignored\nnegated=1\n", f);
+    fclose(f);
+  }
+  request_init(&q);
+  CHECK(request_load(&q, &method, rpath) == 1);
+  CHECK(method == 0);
+  CHECK(q.nsel == 1 && q.sel[0].negated == 1 && q.sel[0].nvalues == 0);
+  request_free(&q);
+  request_free(&r);
+  remove(rpath);
+  remove(path);
+
+  /* --disable must be first or curl ignores it, and --config follows it */
+  request_init(&r);
+  snprintf(r.url, sizeof(r.url), "http://x/");
+  request_add(&r, options_find("location"));
+  request_add(&r, options_find("disable"));
+  r.config_file = "my.conf";
+  CHECK(builder_build(&r, "curl", &args) == 0);
+  prev = builder_preview(&args);
+  CHECK_STR(prev, "curl --disable --config my.conf --location http://x/");
+  free(prev);
+  arg_list_free(&args);
+  request_remove(&r, options_find("disable"));
+  r.no_curlrc = 1;
+  r.config_file = NULL;
+  CHECK(builder_build(&r, "curl", &args) == 0);
+  prev = builder_preview(&args);
+  CHECK_STR(prev, "curl --disable --location http://x/");
+  free(prev);
+  arg_list_free(&args);
+  request_free(&r);
+}
+
 /* End to end: real curl, real file:// transfer, through builder + runner +
    output buffer, the same path the UI uses. */
 static void test_e2e(void)
@@ -739,6 +885,7 @@ int main(int argc, char **argv)
   test_json();
   test_curlinfo_parse();
   test_docs();
+  test_settings();
   if(g_echoargs)
     test_process();
   test_e2e();

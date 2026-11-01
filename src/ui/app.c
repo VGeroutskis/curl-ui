@@ -67,7 +67,7 @@ void app_init(app_t *a)
 {
   memset(a, 0, sizeof(*a));
   request_init(&a->req);
-  snprintf(a->program, sizeof(a->program), "curl");
+  settings_defaults(&a->set);
   a->results = malloc(sizeof(int) * (size_t)g_option_count);
   a->out = outbuf_new(0);
   a->log = outbuf_new(0);
@@ -76,7 +76,6 @@ void app_init(app_t *a)
   a->doc_opt = -1;
   a->doc_built_opt = -2;
   a->hover_cand = -1;
-  a->pretty = 1;
   a->out_follow = 1;
   a->filter_last = -1;
   a->doc_arena = malloc(8192);
@@ -104,7 +103,7 @@ void app_free(app_t *a)
 void app_detect_curl(app_t *a)
 {
   curlinfo_free(&a->curl);
-  curlinfo_detect(a->program[0] ? a->program : "curl", &a->curl);
+  curlinfo_detect(a->set.program[0] ? a->set.program : "curl", &a->curl);
 }
 
 int app_option_supported(const app_t *a, int opt)
@@ -115,8 +114,10 @@ int app_option_supported(const app_t *a, int opt)
 void app_rebuild_args(app_t *a)
 {
   arg_list_free(&a->args);
+  a->req.no_curlrc = a->set.no_curlrc;
+  a->req.config_file = a->set.config_file;
   snprintf(a->req.method, sizeof(a->req.method), "%s", method_names[a->method]);
-  builder_build(&a->req, a->program[0] ? a->program : "curl", &a->args);
+  builder_build(&a->req, a->set.program[0] ? a->set.program : "curl", &a->args);
 }
 
 void app_add_option(app_t *a, const char *name, const char *value)
@@ -195,7 +196,7 @@ void app_run(app_t *a)
   static const char write_out[] =
     "%{stderr}" MARKER_PREFIX "http=%{http_code} time=%{time_total} size=%{size_download}\n";
   const char *extra[8];
-  int n = 0, have_v, i;
+  int n = 0, have_v, i, capture = 1;
   const char **argv;
   char err[512], note[256];
   size_t note_n = 0;
@@ -209,15 +210,19 @@ void app_run(app_t *a)
            request_find(&a->req, options_find("trace")) >= 0 ||
            request_find(&a->req, options_find("trace-ascii")) >= 0;
   note[0] = '\0';
+  if(!a->set.capture) {
+    have_v = 1;
+    capture = 0;
+  }
   if(!have_v) {
     extra[n++] = "--verbose";
     note_n += (size_t)snprintf(note + note_n, sizeof(note) - note_n, " --verbose");
   }
-  if(curlinfo_supports(&a->curl, "no-progress-meter") && curlinfo_at_least(&a->curl, 7, 67)) {
+  if(capture && curlinfo_supports(&a->curl, "no-progress-meter") && curlinfo_at_least(&a->curl, 7, 67)) {
     extra[n++] = "--no-progress-meter";
     note_n += (size_t)snprintf(note + note_n, sizeof(note) - note_n, " --no-progress-meter");
   }
-  if(request_find(&a->req, options_find("write-out")) < 0 && curlinfo_at_least(&a->curl, 7, 63)) {
+  if(capture && request_find(&a->req, options_find("write-out")) < 0 && curlinfo_at_least(&a->curl, 7, 63)) {
     extra[n++] = "--write-out";
     extra[n++] = write_out;
     note_n += (size_t)snprintf(note + note_n, sizeof(note) - note_n, " --write-out <stats>");

@@ -41,6 +41,7 @@ void theme_apply(app_t *a, int dark)
   struct nk_style_scrollbar *sb = &s->scrollv;
 
   a->dark = dark;
+  a->set.dark = dark;
   load_palette(p, dark);
 
   /* Everything is placed by hand: no padding or spacing anywhere. */

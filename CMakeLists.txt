@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 # must precede project() to take effect
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Oldest macOS supported")
-project(curl-ui VERSION 0.1.1 LANGUAGES C)
+project(curl-ui VERSION 0.2.0 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -31,7 +31,7 @@ find_package(Threads REQUIRED)
 add_library(curlui_core STATIC
   src/core/options.c src/core/options_data.c src/core/builder.c
   src/core/procrun.c src/core/outbuf.c src/core/json_fmt.c
-  src/core/curlinfo.c src/core/docs.c)
+  src/core/curlinfo.c src/core/docs.c src/core/settings.c)
 target_include_directories(curlui_core PUBLIC src/core)
 target_link_libraries(curlui_core PUBLIC Threads::Threads)
 if(NOT WIN32)
@@ -86,7 +86,7 @@ if(CURLUI_BUILD_GUI)
   set(CURLUI_SOURCES
     src/ui/main.c src/ui/app.c src/ui/theme.c src/ui/draw.c src/ui/fonts_data.c
     src/ui/view_frame.c src/ui/view_library.c src/ui/view_center.c
-    src/ui/view_output.c src/ui/view_docs.c)
+    src/ui/view_output.c src/ui/view_docs.c src/ui/view_settings.c)
   if(WIN32)
     list(APPEND CURLUI_SOURCES packaging/curl-ui.rc)
     if(MINGW)

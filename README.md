@@ -38,7 +38,42 @@ To fill the Log tab and the status chips, a run also passes `--verbose`,
 `--no-progress-meter` and `--write-out` to curl, when you did not set them
 yourself. The Log says so on its first line, and they are not in the command you
 copy. The rest of the command is exactly what is executed, as an argument array
-with no shell.
+with no shell. This can be turned off in Settings.
+
+## Settings
+
+The Settings button in the header (or the curl version pill) opens them: theme,
+text size, which curl to run, your own curl config file (passed as `--config` on
+every run), ignoring `~/.curlrc`, Pretty JSON, whether runs add the Log flags, the
+docs hover delay, and remembering the last request.
+
+They are saved automatically in a plain text file you can also edit while the app
+is closed. Unknown lines and bad values are ignored.
+
+| Platform | File |
+|---|---|
+| Linux | `$XDG_CONFIG_HOME/curl-ui/settings.ini`, else `~/.config/curl-ui/settings.ini` |
+| macOS | `~/Library/Application Support/curl-ui/settings.ini` |
+| Windows | `%APPDATA%\curl-ui\settings.ini` |
+
+| Key | Values |
+|---|---|
+| `theme` | `dark`, `light` |
+| `text_size` | percent, 50 to 400; `0` detects it from the display |
+| `curl_program` | name or path of curl |
+| `curl_config` | path of a curl config file, or empty |
+| `ignore_curlrc`, `pretty_json`, `capture_log`, `remember_request` | `0`, `1` |
+| `docs_hover_ms` | 0 to 2000 |
+| `window_width`, `window_height` | last window size |
+
+With `remember_request` on, the last request goes to `last-request.txt` next to it,
+including any password in it. Both files are readable only by you on Linux and
+macOS; on Windows they get the default permissions of your profile folder. Turning
+the setting off deletes that file on exit.
+
+On a Wayland session the app uses the native backend when libdecor is installed,
+and XWayland otherwise. Set `SDL_VIDEODRIVER=x11` to force X11. `CURLUI_TRACE=1`
+logs input events and window sizes to stderr, which helps in a bug report.
 
 ## Build
 
@@ -89,6 +124,7 @@ saves the image and exits; `SDL_VIDEODRIVER=dummy` makes that work headless.
 | `--type TEXT` | scripted typing; a newline is Enter |
 | `--screenshot FILE.bmp` | save the result and exit |
 | `--stats` | print UI time per frame |
+| `--settings-dir DIR` | keep settings in DIR. Scripted runs with `--screenshot` otherwise use none |
 
 ## Layout
 
@@ -102,6 +138,7 @@ ui/
     json_fmt      strict JSON validator and pretty printer
     curlinfo      detects the installed curl and what it supports
     docs          curl's markdown-lite -> styled blocks
+    settings      settings file and remembered request
     osthread.h    portable thread and mutex
   src/ui/         SDL + Nuklear: main loop, theme, views
   tests/          ctest: test_core and the echoargs helper
@@ -121,7 +158,9 @@ ui/
   `--url` can be added as an option.
 - Output is held up to 8 MB; use `--output` for more. Text cannot be selected in
   the output, Copy takes the whole tab.
-- Settings such as the theme and curl path are not remembered between runs.
+- At fractional desktop scales such as 125%, text is slightly softer than at 100%
+  or 200%.
+- `~` is not expanded in paths, since no shell is involved: use full paths.
 - Text fields scroll sideways rather than wrap; long bodies are easier with
   `--data @file`.
 - Line editing has no right-to-left or complex script shaping, and glyphs outside

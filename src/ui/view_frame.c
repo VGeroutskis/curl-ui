@@ -5,8 +5,6 @@
 #include <string.h>
 
 #define HEADER_H 48.0f
-#define STRIP_H 44.0f
-#define HOVER_DWELL_MS 110u
 
 extern struct nk_vec2 g_space_origin;
 struct nk_rect center_menu_rect(app_t *a, struct nk_rect center);
@@ -83,33 +81,21 @@ void view_header(app_t *a, struct nk_rect r)
         nk_edit_unfocus(a->ctx);
         a->show_settings = !a->show_settings;
       }
+      {
+        struct nk_rect gear = nk_rect(pill.x - 8 - 76, cy - 13, 76, 26);
+        if(ui_button(a, gear, "Settings", a->show_settings ? BTN_PRIMARY : BTN_SECONDARY)) {
+          nk_edit_unfocus(a->ctx);
+          a->show_settings = !a->show_settings;
+        }
+      }
     }
   }
-}
-
-static void view_settings(app_t *a, struct nk_rect r)
-{
-  const palette *p = &a->pal;
-  float x = r.x + 14, y = r.y + 8, labelw = 88;
-  struct nk_rect detect = nk_rect(x + labelw + 300 + 8, y, 90, 28);
-  ui_push_clip(a, r);
-  ui_rect(a, r, 0, p->panel);
-  nk_stroke_line(nk_window_get_canvas(a->ctx), r.x, r.y + r.h - 0.5f, r.x + r.w, r.y + r.h - 0.5f, 1.0f, p->border);
-  ui_text_fit(a, a->f.semi, x, y, 28, labelw, "curl program", p->text);
-  ui_edit(a, nk_rect(x + labelw, y, 300, 28), a->program, (int)sizeof(a->program), "curl", a->f.mono_small, 0);
-  if(ui_button(a, detect, "Detect", BTN_SECONDARY)) {
-    app_detect_curl(a);
-    a->doc_built_opt = -2;
-  }
-  ui_text_fit(a, a->f.small, detect.x + detect.w + 12, y, 28, r.x + r.w - 14 - (detect.x + detect.w + 12),
-              a->curl.found ? a->curl.banner : "That program did not answer --version like curl does.",
-              a->curl.found ? p->dim : p->red);
 }
 
 void view_frame(app_t *a)
 {
   struct nk_context *ctx = a->ctx;
-  float top = HEADER_H + (a->show_settings ? STRIP_H : 0);
+  float top = HEADER_H;
   float lib_w = NK_CLAMP(300, a->W * 0.24f, 380);
   float doc_w = NK_CLAMP(340, a->W * 0.29f, 480);
   struct nk_rect full = nk_rect(0, 0, a->W, a->H);
@@ -127,6 +113,8 @@ void view_frame(app_t *a)
   app_rebuild_args(a);
 
   /* The popup goes first and takes the input, so nothing below reacts. */
+  if(a->show_settings)
+    a->method_menu = menu_was_open = 0;
   if(menu_was_open) {
     const struct nk_mouse_button *b = &in->mouse.buttons[NK_BUTTON_LEFT];
     if(b->clicked && !b->down) {
@@ -151,8 +139,9 @@ void view_frame(app_t *a)
     /* draw order is nk_edit identity: fixed edits come before the card list */
     view_library(a, nk_rect(0, top, lib_w, a->H - top));
     if(a->show_settings)
-      view_settings(a, nk_rect(0, HEADER_H, a->W, STRIP_H));
-    view_center(a, center);
+      view_settings(a, center);
+    else
+      view_center(a, center);
     view_docs(a, nk_rect(a->W - doc_w, top, doc_w, a->H - top));
     if(menu_was_open && a->method_menu) {
       in->mouse.pos = saved_pos;
@@ -174,7 +163,7 @@ void view_frame(app_t *a)
     a->hover_since = a->now_ms;
   }
   if(a->hover_cand >= 0 && a->hover_cand != a->doc_opt) {
-    if(a->doc_opt < 0 || a->now_ms - a->hover_since >= HOVER_DWELL_MS)
+    if(a->doc_opt < 0 || a->now_ms - a->hover_since >= (unsigned long)a->set.hover_ms)
       app_set_doc(a, a->hover_cand, 0);
     else
       a->wants_timer = 1;

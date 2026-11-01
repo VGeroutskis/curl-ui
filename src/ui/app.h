@@ -11,6 +11,7 @@
 #include "docs.h"
 #include "options.h"
 #include "outbuf.h"
+#include "settings.h"
 #include "procrun.h"
 
 typedef struct {
@@ -91,7 +92,11 @@ typedef struct {
   /* model */
   request req;
   int method;           /* index into the method menu; 0 lets curl decide */
-  char program[1024];
+  settings_t set;
+  char settings_path[SETTINGS_PATH_CAP];   /* "" means nothing is persisted */
+  float settings_scroll;
+  int settings_focus;
+  int reset_settings;
   curl_info curl;
   arg_list args;
 
@@ -226,5 +231,6 @@ void view_library(app_t *a, struct nk_rect r);
 void view_center(app_t *a, struct nk_rect r);
 void view_output(app_t *a, struct nk_rect r);
 void view_docs(app_t *a, struct nk_rect r);
+void view_settings(app_t *a, struct nk_rect r);
 
 #endif

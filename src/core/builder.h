@@ -18,6 +18,8 @@ typedef struct {
 typedef struct {
   char method[16];  /* "" = let curl decide; HEAD maps to --head */
   char url[BUILDER_URL_CAP];
+  int no_curlrc;            /* --disable, which curl only honours first */
+  const char *config_file;  /* --config on every run, or NULL */
   sel_option *sel;
   int nsel;
   int capsel;
