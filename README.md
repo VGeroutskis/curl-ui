@@ -10,14 +10,17 @@ not included: packages depend on it, and the app uses the one on your system.
 
 ## Install
 
-Download from the [releases page](../../releases), or the artifacts of the
-`curl-ui` workflow run:
+Download from the [releases page](../../releases), where `SHA256SUMS` lists the
+checksums, or from the artifacts of the `curl-ui` workflow run:
 
 | Platform | File | Install |
 |---|---|---|
 | Windows x64 | `curl-ui-*-windows-x64.exe` | run the installer (`.zip` is the portable form) |
-| Debian, Ubuntu | `curl-ui-*.deb` | `sudo apt install ./curl-ui_*.deb` |
-| Fedora, RHEL | `curl-ui-*.rpm` | `sudo dnf install ./curl-ui-*.rpm` |
+| Windows ARM64 | `curl-ui-*-windows-arm64.exe` | run the installer (`.zip` is the portable form) |
+| Debian, Ubuntu (x86_64, ARM64) | `curl-ui_*_amd64.deb`, `curl-ui_*_arm64.deb` | `sudo apt install ./curl-ui_*.deb` |
+| Fedora, RHEL (x86_64, ARM64) | `curl-ui-*.x86_64.rpm`, `curl-ui-*.aarch64.rpm` | `sudo dnf install ./curl-ui-*.rpm` |
+| Any Linux (x86_64, ARM64) | `curl-ui-*-linux-*.AppImage` | `chmod +x`, then run it; SDL is included |
+| Any Linux (x86_64, ARM64) | `curl-ui-*-linux-*.tar.gz` | unpack; needs SDL2 installed |
 | macOS (arm64 + x86_64) | `curl-ui-*-macos-universal.dmg` | drag to Applications |
 
 The builds are not code signed. Windows SmartScreen and macOS Gatekeeper warn
@@ -96,7 +99,7 @@ ctest --test-dir build --output-on-failure
 ```
 
 Windows and macOS download SDL 2.30 and link it statically. To make installers
-run `cpack` in the build directory: DEB and RPM on Linux, NSIS and ZIP on Windows
+run `cpack` in the build directory: DEB, RPM and a tarball on Linux, NSIS and ZIP on Windows
 (NSIS must be installed), a DMG on macOS. For a universal macOS build add
 `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"`.
 

@@ -13,8 +13,15 @@ permissions:
 
 jobs:
   linux:
-    # the oldest supported runner sets a low glibc floor for the packages
-    runs-on: ubuntu-22.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # the oldest supported runners set a low glibc floor for the packages
+          - { runner: ubuntu-22.04, arch: x86_64 }
+          - { runner: ubuntu-22.04-arm, arch: aarch64 }
+    name: linux-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
@@ -54,22 +61,49 @@ jobs:
           sudo apt-get install -y ./build/curl-ui_*.deb
           curl-ui --docs location --screenshot installed.bmp
           test -s installed.bmp
+      - name: Build the AppImage
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: 1
+          ARCH: ${{ matrix.arch }}
+        run: |
+          version=$(sed -n 's/^project(curl-ui VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          curl -fsSL -o linuxdeploy "https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-$ARCH.AppImage"
+          chmod +x linuxdeploy
+          cmake --install build --prefix AppDir/usr
+          OUTPUT="build/curl-ui-$version-linux-$ARCH.AppImage" ./linuxdeploy --appdir AppDir \
+            --desktop-file packaging/curl-ui.desktop --icon-file packaging/curl-ui.png --output appimage
+      - name: Run the AppImage
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: 1
+          SDL_VIDEODRIVER: dummy
+        run: |
+          ./build/curl-ui-*.AppImage --docs location --screenshot "$PWD/appimage.bmp"
+          test -s appimage.bmp
       - uses: actions/upload-artifact@v4
         with:
-          name: curl-ui-linux
+          name: curl-ui-linux-${{ matrix.arch }}
           path: |
             build/*.deb
             build/*.rpm
+            build/*.tar.gz
+            build/*.AppImage
           if-no-files-found: error
 
   windows:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: windows-latest, platform: x64, arch: x64 }
+          - { runner: windows-11-arm, platform: ARM64, arch: arm64 }
+    name: windows-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - name: Install NSIS
         run: choco install nsis -y --no-progress
       - name: Configure
-        run: cmake -S . -B build -A x64
+        run: cmake -S . -B build -A ${{ matrix.platform }}
       - name: Build
         run: cmake --build build --config Release -j4
       - name: Test
@@ -98,7 +132,7 @@ jobs:
           if ($p.ExitCode -ne 0) { exit 1 }
       - uses: actions/upload-artifact@v4
         with:
-          name: curl-ui-windows
+          name: curl-ui-windows-${{ matrix.arch }}
           path: |
             build/curl-ui-*.exe
             build/curl-ui-*.zip
@@ -144,4 +178,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
-        run: gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "curl UI $TAG" --generate-notes dist/*/*
+        run: |
+          mkdir release
+          mv dist/*/* release/
+          (cd release && sha256sum -- * > SHA256SUMS)
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "curl UI $TAG" --generate-notes release/*
