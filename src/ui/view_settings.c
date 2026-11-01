@@ -114,7 +114,7 @@ void view_settings(app_t *a, struct nk_rect r)
     theme_apply(a, i == 0);
   y += ROW_H - 6;
   row_label(a, x, y, "Text size", NULL, w);
-  sel = 0;
+  sel = -1;  /* a size set in the file may be none of these */
   for(i = 0; i < 6; i++)
     if(size_values[i] == set->zoom)
       sel = i;
@@ -161,7 +161,7 @@ void view_settings(app_t *a, struct nk_rect r)
              &set->remember);
   y += ROW_H;
   row_label(a, x, y, "Docs hover delay", NULL, w);
-  sel = 1;
+  sel = -1;
   for(i = 0; i < 3; i++)
     if(hover_values[i] == set->hover_ms)
       sel = i;

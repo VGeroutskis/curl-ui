@@ -76,7 +76,7 @@ try to open the app, then choose Open Anyway in System Settings, Privacy & Secur
 on older versions use right click, Open.
 
 curl itself must be installed. Windows 10 and later and macOS include it. If
-it is not on `PATH`, click the version pill in the header and enter its path.
+it is not on `PATH`, click the version pill in the header and enter its path under Program.
 
 ## Using it
 
@@ -86,6 +86,8 @@ it is not on `PATH`, click the version pill in the header and enter its path.
   everything chosen so far: what conflicts, and what belongs to another protocol
   (`--ftp-pasv` rules out `--user-agent`), steps aside, with a count and a Show all
   link to see it anyway. Removing an option brings back what it ruled out.
+  Deprecated options stay out of the list unless you search or use the Deprecated
+  filter under More, which is why it starts at 269 of 278.
 - **Centre:** method and URL on top, a card per added option, the exact command
   below (Copy gives the same text), and the output with Response and Log tabs.
   Press Enter in the URL, or Run. Recipes are starting points.
@@ -115,13 +117,26 @@ with no shell. This can be turned off in Settings.
 
 ## Settings
 
-The Settings button in the header (or the curl version pill) opens them: theme,
-text size, which curl to run, your own curl config file (passed as `--config` on
-every run), ignoring `~/.curlrc`, Pretty JSON, whether runs add the Log flags, the
-docs hover delay, and remembering the last request.
+The Settings button in the header, or the curl version pill beside it, opens them.
+Changes apply at once and are saved automatically; **Reset to defaults** restores
+the values in bold.
 
-They are saved automatically in a plain text file you can also edit while the app
-is closed. Unknown lines and bad values are ignored.
+| In the app | Choices | What it does | Key in the file |
+|---|---|---|---|
+| Theme | **Dark**, Light | Colour theme, also on the header button | `theme`: `dark`, `light` |
+| Text size | **Auto**, 100%, 125%, 150%, 175%, 200% | Auto follows the display's scale | `text_size`: `0` for Auto, or a percent |
+| Program | **`curl`**, or a name or path | Which curl to run. Detect checks it again | `curl_program` |
+| Your config file | **empty**, or a path | Passed as `--config` on every run | `curl_config` |
+| Ignore ~/.curlrc | On, **Off** | Starts every command with `--disable` | `ignore_curlrc`: `1`, `0` |
+| Pretty JSON by default | **On**, Off | Formats valid JSON responses | `pretty_json`: `1`, `0` |
+| Fill the Log tab and status chips | **On**, Off | Adds `--verbose`, `--no-progress-meter` and `--write-out` to runs | `capture_log`: `1`, `0` |
+| Remember the last request | On, **Off** | Restores the request at the next start | `remember_request`: `1`, `0` |
+| Docs hover delay | Instant, **Normal**, Slow | How long to hover before the docs change | `docs_hover_ms`: `0`, `110`, `300` |
+
+The window size is kept too, as `window_width` and `window_height`, with no control
+in the app.
+
+The settings are a plain text file you can edit while the app is closed:
 
 | Platform | File |
 |---|---|
@@ -129,20 +144,15 @@ is closed. Unknown lines and bad values are ignored.
 | macOS | `~/Library/Application Support/curl-ui/settings.ini` |
 | Windows | `%APPDATA%\curl-ui\settings.ini` |
 
-| Key | Values |
-|---|---|
-| `theme` | `dark`, `light` |
-| `text_size` | percent, 50 to 400; `0` detects it from the display |
-| `curl_program` | name or path of curl |
-| `curl_config` | path of a curl config file, or empty |
-| `ignore_curlrc`, `pretty_json`, `capture_log`, `remember_request` | `0`, `1` |
-| `docs_hover_ms` | 0 to 2000 |
-| `window_width`, `window_height` | last window size |
+Bad values and unknown lines are ignored, and the next save does not keep unknown
+lines or your own comments. The file also accepts values the app does not offer:
+`text_size` from 50 to 400 and `docs_hover_ms` from 0 to 2000. Then no choice is
+highlighted on that row until you pick one.
 
-With `remember_request` on, the last request goes to `last-request.txt` next to it,
-including any password in it. Both files are readable only by you on Linux and
-macOS; on Windows they get the default permissions of your profile folder. Turning
-the setting off deletes that file on exit.
+With Remember the last request on, the request goes to `last-request.txt` next to the
+settings, including any password in it. Both files are readable only by you on Linux
+and macOS; on Windows they get the default permissions of your profile folder.
+Turning the setting off deletes that file when the app closes.
 
 On a Wayland session the app uses the native backend when libdecor is installed,
 and XWayland otherwise. Set `SDL_VIDEODRIVER=x11` to force X11. `CURLUI_TRACE=1`
