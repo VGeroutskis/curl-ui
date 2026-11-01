@@ -579,6 +579,7 @@ int main(int argc, char **argv)
   const char *settings_dir = NULL, *dump = NULL;
   char request_path[SETTINGS_PATH_CAP] = "";
   int have_cli_request = 0;
+  int no_system_bar = 0;
   settings_t saved;
   const char *screenshot = NULL, *docs = NULL, *search = NULL, *method = NULL;
   int ow, oh, ww, wh;
@@ -929,10 +930,20 @@ int main(int argc, char **argv)
   SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, "0");  /* crisp glyphs */
   SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
 #ifdef __linux__
-  /* XWayland blurs under a scaled desktop, so a Wayland session gets the native
-     backend. GNOME draws no title bars for clients, so only with libdecor. */
+  /* XWayland blurs under a scaled desktop, so a Wayland session gets the native backend.
+     GNOME draws no title bars for clients: libdecor does, and our own bar needs neither. */
   if(getenv("WAYLAND_DISPLAY") && !getenv("SDL_VIDEODRIVER")) {
-    void *decor = SDL_LoadObject("libdecor-0.so.0");
+    void *decor;
+    /* Loaded first by its full path, the system's libdecor is the one SDL then gets by name,
+       and it stays loaded. An AppImage's own would find no plugins on another distribution. */
+    if(a->set.native_frame && getenv("APPIMAGE")) {
+      char lib[SETTINGS_PATH_CAP], plugins[SETTINGS_PATH_CAP];
+      if(libdecor_find(lib, sizeof(lib), plugins, sizeof(plugins)) && SDL_LoadObject(lib))
+        SDL_setenv("LIBDECOR_PLUGIN_DIR", plugins, 0);
+      else
+        no_system_bar = 1;
+    }
+    decor = SDL_LoadObject("libdecor-0.so.0");
     if(decor) {
       SDL_UnloadObject(decor);
       SDL_setenv("SDL_VIDEODRIVER", "wayland", 1);  /* the hint needs SDL 2.0.22 */
@@ -957,7 +968,9 @@ int main(int argc, char **argv)
     win_h = MIN_H;
 #ifndef __APPLE__
   /* A Mac keeps its own buttons, where people expect them. */
-  a->own_frame = !a->set.native_frame;
+  a->own_frame = !a->set.native_frame || no_system_bar;
+  if(no_system_bar)
+    app_notice(a, "This system has no libdecor with plugins to draw its title bar, so the app's own buttons stay.");
 #endif
   g_window = SDL_CreateWindow("curl UI", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, win_w, win_h,
                               SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | (a->own_frame ? SDL_WINDOW_BORDERLESS : 0) |

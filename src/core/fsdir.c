@@ -638,6 +638,63 @@ char *fs_option_path(const char *option, const char *value)
 
 /* ---- our own title bar ---- */
 
+int libdecor_find_in(const char *const *roots, int nroots, char *lib, size_t libn, char *plugins, size_t pluginsn)
+{
+  int i;
+  for(i = 0; i < nroots; i++) {
+    char *l = fs_join(roots[i], "libdecor-0.so.0");
+    char *p = fs_join(roots[i], "libdecor/plugins-1");
+    int found = 0;
+    fs_listing list;
+    char err[64];
+    if(l && p && fs_kind(l) == FS_FILE && fs_kind(p) == FS_DIR && !fs_list(p, &list, err, sizeof(err))) {
+      int k;
+      for(k = 0; k < list.n; k++) {
+        size_t n = strlen(list.e[k].name);
+        if(!list.e[k].is_dir && n > 3 && !strcmp(list.e[k].name + n - 3, ".so"))
+          found = 1;
+      }
+      fs_listing_free(&list);
+    }
+    if(found && strlen(l) < libn && strlen(p) < pluginsn) {
+      strcpy(lib, l);
+      strcpy(plugins, p);
+    }
+    else
+      found = 0;
+    free(l);
+    free(p);
+    if(found)
+      return 1;
+  }
+  return 0;
+}
+
+int libdecor_find(char *lib, size_t libn, char *plugins, size_t pluginsn)
+{
+  static const char *const fixed[] = { "/usr/lib64", "/usr/lib", "/lib64", "/lib", "/usr/local/lib64", "/usr/local/lib" };
+  static const char *const parents[] = { "/usr/lib", "/lib" };
+  char *roots[64];
+  int n = 0, i, found;
+  size_t k;
+  for(k = 0; k < sizeof(fixed) / sizeof(fixed[0]); k++)
+    roots[n++] = dup_s(fixed[k]);
+  for(k = 0; k < sizeof(parents) / sizeof(parents[0]); k++) {
+    fs_listing list;
+    char err[64];
+    if(!fs_list(parents[k], &list, err, sizeof(err))) {
+      for(i = 0; i < list.n && n < 64; i++)
+        if(list.e[i].is_dir && strstr(list.e[i].name, "-linux-"))
+          roots[n++] = fs_join(parents[k], list.e[i].name);
+      fs_listing_free(&list);
+    }
+  }
+  found = libdecor_find_in((const char *const *)roots, n, lib, libn, plugins, pluginsn);
+  for(i = 0; i < n; i++)
+    free(roots[i]);
+  return found;
+}
+
 win_hit win_hit_test(float x, float y, float w, float h, float drag_h, float drag_right, int maximized)
 {
   if(!maximized) {

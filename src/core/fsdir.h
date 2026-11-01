@@ -61,5 +61,13 @@ typedef enum {
 #define WIN_EDGE 6.0f
 /* Window units. drag_h is the height of the bar, drag_right where its controls begin. */
 win_hit win_hit_test(float x, float y, float w, float h, float drag_h, float drag_right, int maximized);
+/* An AppImage's own libdecor looks for its plugins where the system that built it keeps them,
+   so elsewhere it has none and draws no title bar. This finds the libdecor of the system this
+   runs on: the first root holding libdecor-0.so.0 and a plugins-1 folder with a plugin in it.
+   Returns 1 with both full paths, else 0. */
+int libdecor_find_in(const char *const *roots, int nroots, char *lib, size_t libn, char *plugins, size_t pluginsn);
+/* The same over the system's library folders, whatever they are called here: the usual ones,
+   and those under /usr/lib and /lib named for an architecture, such as x86_64-linux-gnu. */
+int libdecor_find(char *lib, size_t libn, char *plugins, size_t pluginsn);
 
 #endif

@@ -234,6 +234,39 @@ static void test_hit(void)
   CHECK(win_hit_test(0, 0, 1000, 600, 48, 800, 1) == WIN_HIT_DRAG);
   CHECK(win_hit_test(999, 0, 1000, 600, 48, 800, 1) == WIN_HIT_NONE);
   CHECK(win_hit_test(0, 300, 1000, 600, 48, 800, 1) == WIN_HIT_NONE);
+
+}
+
+static void touch(const char *base, const char *name)
+{
+  char *p = fs_join(base, name);
+  CHECK(!file_write_private(p, "", 0));
+  free(p);
+}
+
+static void test_libdecor(const char *scratch)
+{
+  char *base = fs_join(scratch, "decor");
+  char *none = fs_join(base, "none"), *noplug = fs_join(base, "noplug"), *good = fs_join(base, "good"), *other = fs_join(base, "other");
+  char lib[1024], plugins[1024], want[1200];
+  const char *roots[4];
+  touch(noplug, "libdecor-0.so.0");       /* the library, but its plugins folder is empty of plugins */
+  touch(noplug, "libdecor/plugins-1/readme.txt");
+  touch(good, "libdecor-0.so.0");
+  touch(good, "libdecor/plugins-1/libdecor-gtk.so");
+  touch(other, "libdecor/plugins-1/libdecor-gtk.so");  /* plugins with no library */
+  roots[0] = none;
+  roots[1] = noplug;
+  roots[2] = other;
+  CHECK(!libdecor_find_in(roots, 3, lib, sizeof(lib), plugins, sizeof(plugins)));
+  roots[3] = good;
+  CHECK(libdecor_find_in(roots, 4, lib, sizeof(lib), plugins, sizeof(plugins)));
+  snprintf(want, sizeof(want), "%s/libdecor-0.so.0", good);
+  CHECK_STR(lib, want);
+  snprintf(want, sizeof(want), "%s/libdecor/plugins-1", good);
+  CHECK_STR(plugins, want);
+  CHECK(!libdecor_find_in(roots, 4, lib, 4, plugins, sizeof(plugins)));  /* no room: not found, not cut */
+  free(base); free(none); free(noplug); free(good); free(other);
 }
 
 int main(int argc, char **argv)
@@ -246,6 +279,9 @@ int main(int argc, char **argv)
   test_paths();
   test_options();
   test_hit();
+#ifndef _WIN32
+  test_libdecor(argv[1]);
+#endif
   if(fails)
     fprintf(stderr, "%d failed\n", fails);
   else

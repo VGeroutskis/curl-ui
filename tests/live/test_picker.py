@@ -158,6 +158,9 @@ def main():
             env = dict(os.environ, SDL_VIDEODRIVER="dummy")
             done = subprocess.run([ui, "--settings-dir", s2, "--size", "1440x900", "--click", "1420,24"], env=env, timeout=30)
             check(done.returncode == 0, "the third closes the app")
+            s3 = os.path.join(tmp, "s3")
+            app("--click", "1145,24", "--click", "978,476", settings=s3)
+            check(field(app(settings=s3), "own_frame") == "0", "the switch in Settings brings the system's bar at the next start")
             text = app("--native-frame", settings=s2)
             check(field(text, "own_frame") == "0", "the system title bar can be asked for")
         else:
