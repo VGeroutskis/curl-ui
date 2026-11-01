@@ -14,6 +14,7 @@
 #include "options.h"
 #include "outbuf.h"
 #include "settings.h"
+#include "urlquery.h"
 #include "vars.h"
 #include "procrun.h"
 
@@ -79,6 +80,8 @@ typedef struct {
 
 #define MAX_TABS 32
 
+typedef enum { FORM_PARAMS, FORM_HEADERS, FORM_BODY, FORM_AUTH, FORM_CURL, FORM_COUNT } form_kind;
+
 /* One open request: what it asks, and what its run produced. */
 typedef struct {
   request req;
@@ -87,6 +90,11 @@ typedef struct {
   arg_list args_real;   /* what curl gets */
   arg_list args;        /* what is on screen: secrets hidden, tokens parallel to the others */
   int dirty;            /* differs from what is saved */
+  form_kind form;
+  kv_list params;       /* the query of the URL, and rows switched off */
+  char *params_url;     /* the URL params was last read from or written to */
+  float form_scroll;
+  int form_focus;
   int reveal;           /* the eye on the command: real values, until the tab changes */
   unsigned long copied_secret_at;  /* when Copy took real secret values, for a short note */
   mask_set *mask;       /* the secrets of the last run, hidden in its output */
@@ -307,6 +315,10 @@ void app_notice(app_t *a, const char *text);
 /* views */
 void view_frame(app_t *a);
 void view_tabs(app_t *a, struct nk_rect r);
+void view_form(app_t *a, struct nk_rect r);
+void form_params_sync(tab_t *t);
+void form_params_apply(tab_t *t);
+int form_kv_table(app_t *a, struct nk_rect r, kv_list *l, const char *key_hint, const char *value_hint, int doc_opt);
 void view_header(app_t *a, struct nk_rect r);
 void view_library(app_t *a, struct nk_rect r);
 void view_center(app_t *a, struct nk_rect r);

@@ -6,6 +6,7 @@
 #include "builder.h"
 #include "fileio.h"
 #include "json.h"
+#include "mask.h"
 #include "options.h"
 #include "settings.h"
 #include "urlquery.h"
@@ -494,6 +495,136 @@ static void test_vars_store(void)
   vars_free(&b);
 }
 
+static char *mask_text(const mask_set *m, const char *text)
+{
+  size_t n = strlen(text);
+  char *d = malloc(n + 1);
+  memcpy(d, text, n + 1);
+  mask_apply(m, d, n);
+  CHECK(strlen(d) == n);
+  return d;
+}
+
+static void test_base64(void)
+{
+  char *s = base64_encode("user:pass", 9);
+  CHECK_STR(s, "dXNlcjpwYXNz");
+  free(s);
+  s = base64_encode("a", 1);
+  CHECK_STR(s, "YQ==");
+  free(s);
+  s = base64_encode("ab", 2);
+  CHECK_STR(s, "YWI=");
+  free(s);
+}
+
+static void test_mask(void)
+{
+  var_store st;
+  var_env *e;
+  arg_list l, real, shown;
+  mask_set *m;
+  char *got;
+  vars_init(&st);
+  e = &st.e[0];
+  var_set(e, "long", "abcdef", 1);
+  var_set(e, "short", "abcd", 1);   /* part of the other: the longer one goes first */
+  var_set(e, "tiny", "abc", 1);     /* too short to hide without hiding other text */
+  var_set(e, "spaced", "a b+c", 1);
+  var_set(e, "plain", "visible", 0);
+  l = one_arg_request("http://x/", NULL);
+  CHECK(vars_apply(e, &l, &real, &shown) == 0);
+  m = mask_build(e, &real);
+  got = mask_text(m, "xabcdefy abcd abc a b+c a%20b%2Bc visible");
+  CHECK_STR(got, "x******y **** abc ***** ********* visible");
+  free(got);
+  mask_free(m);
+  arg_list_free(&real);
+  arg_list_free(&shown);
+  arg_list_free(&l);
+  /* Basic auth is base64 of user:password on the wire */
+  {
+    request r;
+    var_store st2;
+    var_env *e2;
+    char *b64 = base64_encode("bob:hunter22", 12);
+    char line[128];
+    vars_init(&st2);
+    e2 = &st2.e[0];
+    var_set(e2, "p", "hunter22", 1);
+    request_init(&r);
+    request_set_url(&r, "http://x/");
+    request_set_value(request_add(&r, options_find("user")), 0, "bob:{{p}}");
+    builder_build(&r, "curl", &l);
+    CHECK(vars_apply(e2, &l, &real, &shown) == 0);
+    m = mask_build(e2, &real);
+    snprintf(line, sizeof(line), "> Authorization: Basic %s", b64);
+    got = mask_text(m, line);
+    CHECK(strstr(got, b64) == NULL);
+    CHECK(strstr(got, "> Authorization: Basic *") != NULL);
+    free(got);
+    mask_free(m);
+    free(b64);
+    arg_list_free(&real);
+    arg_list_free(&shown);
+    arg_list_free(&l);
+    request_free(&r);
+    vars_free(&st2);
+  }
+  /* nothing to hide */
+  mask_apply(NULL, NULL, 0);
+  vars_free(&st);
+}
+
+static void test_query(void)
+{
+  kv_list rows;
+  char *url;
+  char *s;
+  memset(&rows, 0, sizeof(rows));
+  /* a table of plain text becomes an encoded query */
+  kv_add(&rows, "q", "\xCE\xBA\xCE\xB1\xCF\x86\xCE\xAD\xCF\x82 & \xCE\xB3\xCE\xAC\xCE\xBB\xCE\xB1", 1);
+  kv_add(&rows, "a=b", "c=d", 1);
+  kv_add(&rows, "off", "x", 0);
+  kv_add(&rows, "t", "{{tok en}}", 1);
+  kv_add(&rows, "v", "{{v}}", 1);
+  url = query_build("https://h/p?old=1#top", &rows);
+  CHECK_STR(url, "https://h/p?q=%CE%BA%CE%B1%CF%86%CE%AD%CF%82%20%26%20%CE%B3%CE%AC%CE%BB%CE%B1"
+                 "&a%3Db=c%3Dd&t=%7B%7Btok%20en%7D%7D&v={{v}}#top");
+  free(url);
+  kv_free(&rows);
+  /* and back: decoded, never encoded twice */
+  CHECK(query_parse("https://h/p?a=x%20y&b=%7B&c=1+2&d&e=%zz&=z&v={{v}}#top", &rows) == 0);
+  CHECK(rows.n == 7);
+  CHECK_STR(rows.r[0].key, "a");
+  CHECK_STR(rows.r[0].value, "x y");
+  CHECK_STR(rows.r[1].value, "{");
+  CHECK_STR(rows.r[2].value, "1 2");
+  CHECK_STR(rows.r[3].key, "d");
+  CHECK_STR(rows.r[3].value, "");
+  CHECK_STR(rows.r[4].value, "%zz");
+  CHECK_STR(rows.r[5].key, "");
+  CHECK_STR(rows.r[6].value, "{{v}}");
+  CHECK(rows.r[0].enabled);
+  url = query_build("https://h/p?a=x%20y&b=%7B#top", &rows);
+  CHECK(url && strstr(url, "?a=x%20y&b=%7B&c=1%202&d=&e=%25zz&=z&v={{v}}#top") != NULL);
+  free(url);
+  kv_free(&rows);
+  /* nothing to show, and every row off drops the ? */
+  CHECK(query_parse("https://h/p", &rows) == 0 && rows.n == 0);
+  kv_add(&rows, "a", "1", 0);
+  url = query_build("https://h/p?x=1", &rows);
+  CHECK_STR(url, "https://h/p");
+  free(url);
+  kv_free(&rows);
+  s = pct_decode("a+b%41%zz%", 1);
+  CHECK_STR(s, "a bA%zz%");
+  free(s);
+  s = pct_decode("a+b", 0);
+  CHECK_STR(s, "a+b");
+  free(s);
+}
+
 static void test_args_remove_stale(void)
 {
   char a[1024], b[1024];
@@ -529,6 +660,9 @@ int main(int argc, char **argv)
   test_vars_missing();
   test_vars_apply();
   test_vars_store();
+  test_base64();
+  test_mask();
+  test_query();
   printf("%d checks, %d failed\n", g_checks, g_fail);
   return g_fail ? 1 : 0;
 }

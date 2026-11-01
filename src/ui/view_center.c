@@ -574,16 +574,39 @@ void view_center(app_t *a, struct nk_rect r)
     app_push(a, running ? ACT_STOP : ACT_RUN, 0, 0);
   y += 42;
 
-  /* options header */
-  ui_text_fit(a, a->f.semi, x, y, 24, 70, "Options", p->text);
-  if(CUR(a)->req.nsel) {
-    snprintf(tmp, sizeof(tmp), "%d", CUR(a)->req.nsel);
-    ui_pill(a, x + ui_text_w(a->f.semi, "Options", 7) + 8, y + 3, tmp, p->accent, p->accent_soft);
+  /* views of the request */
+  {
+    static const char *const names[FORM_COUNT] = { "Params", "Headers", "Body", "Auth", "Curl" };
+    float fx = x;
+    int f;
+    for(f = 0; f < FORM_COUNT; f++) {
+      float fw = ui_text_w(a->f.semi, names[f], (int)strlen(names[f])) + 16;
+      struct nk_rect t = nk_rect(fx, y, fw, 24);
+      int active = CUR(a)->form == (form_kind)f;
+      int hover = ui_hover(a, t);
+      ui_text_fit(a, a->f.semi, fx + 8, y, 24, fw - 8, names[f], active || hover ? p->text : p->dim);
+      if(active)
+        ui_rect(a, nk_rect(fx + 6, y + 23, fw - 12, 2), 1, p->accent);
+      if(hover)
+        a->cursor = CURSOR_HAND;
+      if(ui_clicked(a, t) && !active) {
+        CUR(a)->form = (form_kind)f;
+        CUR(a)->form_scroll = 0;
+        a->pending_unfocus = 1;
+      }
+      fx += fw;
+    }
+    if(CUR(a)->req.nsel) {
+      snprintf(tmp, sizeof(tmp), "%d", CUR(a)->req.nsel);
+      ui_pill(a, fx + 2, y + 3, tmp, p->accent, p->accent_soft);
+    }
   }
   if(ui_button(a, nk_rect(x + w - 74, y, 74, 24), "Clear all", BTN_GHOST) && CUR(a)->req.nsel)
     app_push(a, ACT_CLEAR, 0, 0);
-  if(ui_button(a, nk_rect(x + w - 74 - 70, y, 66, 24), "Recipes", BTN_GHOST))
-    CUR(a)->show_recipes = !CUR(a)->show_recipes;
+  if(ui_button(a, nk_rect(x + w - 74 - 70, y, 66, 24), "Recipes", BTN_GHOST)) {
+    CUR(a)->show_recipes = CUR(a)->form != FORM_CURL || !CUR(a)->show_recipes;
+    CUR(a)->form = FORM_CURL;
+  }
   y += 30;
 
   /* Output height comes from the space really left, not a fixed share. */
@@ -596,7 +619,12 @@ void view_center(app_t *a, struct nk_rect r)
     out_h = avail - list_h;
   }
 
-  draw_list(a, nk_rect(x, y, w, list_h));
+  if(CUR(a)->form == FORM_CURL)
+    draw_list(a, nk_rect(x, y, w, list_h));
+  else {
+    view_form(a, nk_rect(x, y, w, list_h));
+    ui_push_clip(a, r);
+  }
   y += list_h + CARD_GAP;
   draw_command(a, nk_rect(x, y, w, cmd_h));
   y += cmd_h + CARD_GAP;

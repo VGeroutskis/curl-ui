@@ -381,6 +381,9 @@ static int write_dump(app_t *a, const char *path)
     fprintf(f, "exit=%d\nhad_result=%d\nhttp=%d\nstats=%d\nsize=%lld\nurl_missing=%d\n", CUR(a)->exit_code, CUR(a)->has_result,
             CUR(a)->http_status, CUR(a)->has_stats, CUR(a)->curl_size, CUR(a)->url_missing);
     fprintf(f, "listed=%d\nhidden=%d\ntabs=%d\ncur=%d\n", a->nresults, a->nhidden, a->ntabs, a->cur);
+    form_params_sync(CUR(a));
+    for(i = 0; i < CUR(a)->params.n; i++)
+      fprintf(f, "param=%s:%s\n", CUR(a)->params.r[i].key, CUR(a)->params.r[i].value);
     fprintf(f, "env=%s\nshow_vars=%d\nnotice=%s\nmodal=%d\nmodal_missing=", a->vars.e[a->vars.active].name, a->show_vars,
             a->notice, a->modal_open);
     for(i = 0; i < a->modal_names.n; i++)
@@ -640,6 +643,35 @@ int main(int argc, char **argv)
         found = env_add(&a->vars, name);
       if(found >= 0)
         a->vars.active = found;
+    }
+    else if(!strcmp(arg, "--form")) {
+      static const char *const names[FORM_COUNT] = { "params", "headers", "body", "auth", "curl" };
+      const char *v = NEXT();
+      int k;
+      for(k = 0; k < FORM_COUNT; k++)
+        if(!strcmp(names[k], v))
+          CUR(a)->form = (form_kind)k;
+    }
+    else if(!strcmp(arg, "--set-param")) {
+      const char *v = NEXT();
+      const char *eq = strchr(v, '=');
+      char name[256];
+      if(!eq) {
+        fprintf(stderr, "--set-param wants KEY=VALUE\n");
+        return 2;
+      }
+      snprintf(name, sizeof(name), "%.*s", (int)(eq - v), v);
+      form_params_sync(CUR(a));
+      kv_add(&CUR(a)->params, name, eq + 1, 1);
+      form_params_apply(CUR(a));
+    }
+    else if(!strcmp(arg, "--param-off")) {
+      const char *v = NEXT();
+      int k;
+      for(k = 0; k < CUR(a)->params.n; k++)
+        if(!strcmp(CUR(a)->params.r[k].key, v))
+          CUR(a)->params.r[k].enabled = 0;
+      form_params_apply(CUR(a));
     }
     else if(!strcmp(arg, "--reveal"))
       CUR(a)->reveal = 1;

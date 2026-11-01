@@ -80,6 +80,8 @@ static void tab_free(tab_t *t)
   arg_list_free(&t->args_real);
   arg_list_free(&t->args);
   mask_free(t->mask);
+  kv_free(&t->params);
+  free(t->params_url);
   outbuf_free(t->out);
   outbuf_free(t->log);
   outbuf_free(t->pretty_buf);
@@ -198,6 +200,7 @@ void app_add_option(app_t *a, const char *name, const char *value)
   sel_option *s;
   if(opt < 0)
     return;
+  CUR(a)->form = FORM_CURL;
   s = request_add(&CUR(a)->req, opt);
   if(s && value && g_options[opt].arg[0]) {
     int i, slot = -1;
@@ -213,6 +216,7 @@ void app_add_option(app_t *a, const char *name, const char *value)
 
 void app_toggle_option(app_t *a, int opt)
 {
+  CUR(a)->form = FORM_CURL;
   if(request_find(&CUR(a)->req, opt) >= 0)
     request_remove(&CUR(a)->req, opt);
   else {
@@ -223,6 +227,7 @@ void app_toggle_option(app_t *a, int opt)
 
 void app_apply_recipe(app_t *a, int index)
 {
+  CUR(a)->form = FORM_CURL;
   const recipe *r = &g_recipes[index];
   int i;
   request_clear_options(&CUR(a)->req);
