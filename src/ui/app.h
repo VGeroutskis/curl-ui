@@ -154,7 +154,7 @@ typedef struct {
 typedef enum { SIDE_COLLECTIONS, SIDE_HISTORY, SIDE_OPTIONS, SIDE_COUNT } side_kind;
 typedef enum {
   DLG_NONE, DLG_NEW_COLL, DLG_NEW_FOLDER, DLG_NEW_REQUEST, DLG_RENAME, DLG_SAVE_AS, DLG_MOVE, DLG_DELETE, DLG_CLOSE_TAB,
-  DLG_QUIT
+  DLG_QUIT, DLG_IMPORT
 } dialog_kind;
 
 typedef enum { MODAL_NONE, MODAL_SAVE, MODAL_CANCEL, MODAL_OPEN_VARS } modal_action;
@@ -220,6 +220,9 @@ typedef struct {
   char dlg_name[256];
   int dlg_pending;      /* 1 ok, 2 cancel, 3 discard */
   int dlg_close_after;  /* a Save as that started from closing the tab */
+  char *import_text;
+  size_t import_cap;
+  char import_err[256];
 
   /* history */
   history hist;
@@ -377,6 +380,7 @@ int app_save_as_path(app_t *a, const char *path);
 void app_history_begin(app_t *a, tab_t *t);
 void app_history_end(app_t *a, tab_t *t);
 void app_open_history(app_t *a, int index);
+int app_import_command(app_t *a, const char *text, char *err, size_t errn);  /* into a new or blank tab */
 void app_store_load(app_t *a);
 void app_session_load(app_t *a);
 void app_session_save(app_t *a);

@@ -354,7 +354,12 @@ void dialog_open(app_t *a, dialog_kind kind, coll_node *node)
   a->dlg_target = 0;
   a->dlg_scroll = 0;
   a->dlg_name[0] = '\0';
+  a->import_err[0] = '\0';
   a->pending_unfocus = 1;
+  if(kind == DLG_IMPORT && !a->import_text) {
+    a->import_cap = 4096;
+    a->import_text = calloc(1, a->import_cap);
+  }
   if(kind == DLG_RENAME)
     snprintf(a->dlg_name, sizeof(a->dlg_name), "%s", node->name);
   if(kind == DLG_SAVE_AS) {
@@ -475,6 +480,12 @@ static void dialog_confirm(app_t *a)
     }
     break;
   }
+  case DLG_IMPORT:
+    a->import_err[0] = '\0';
+    if(app_import_command(a, a->import_text ? a->import_text : "", a->import_err, sizeof(a->import_err)))
+      return;  /* stays open with the reason */
+    a->import_text[0] = '\0';
+    break;
   case DLG_SAVE_AS: {
     coll_node *to = a->dlg_target < a->dlg_ntargets ? a->dlg_targets[a->dlg_target] : NULL;
     if(!to) {
@@ -570,6 +581,13 @@ void view_dialog(app_t *a)
     ok = "Save";
     name_field = 0;
     break;
+  case DLG_IMPORT:
+    title = "Import a curl command";
+    ok = "Import";
+    name_field = 0;
+    hint = "Paste the command. Nothing runs until you press Run.";
+    h += 200;
+    break;
   case DLG_QUIT:
     title = "Some tabs have unsaved changes";
     ok = "Quit anyway";
@@ -600,6 +618,13 @@ void view_dialog(app_t *a)
     if(st & NK_EDIT_COMMITED)
       a->dlg_pending = 1;
     by += 38;
+  }
+  if(a->dlg == DLG_IMPORT) {
+    struct nk_rect box = nk_rect(x + 18, by + 24, w - 36, 186);
+    ui_edit_dyn(a, box, &a->import_text, &a->import_cap, "curl https://example.com -H 'Accept: application/json'",
+                a->f.mono_small, NK_EDIT_MULTILINE);
+    if(a->import_err[0])
+      ui_text_fit(a, a->f.small, x + 18, y + h - 66, 20, w - 36, a->import_err, p->red);
   }
   if(targets) {
     list_targets(a, x + 18, by, w - 36, 160);

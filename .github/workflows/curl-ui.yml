@@ -52,6 +52,7 @@ jobs:
           python3 tests/live/test_params.py --ui build/curl-ui
           python3 tests/live/test_forms.py --ui build/curl-ui
           python3 tests/live/test_store.py --ui build/curl-ui
+          python3 tests/live/test_import.py --ui build/curl-ui
       - name: Sanitizers
         run: |
           cmake -S . -B build-san -DCMAKE_BUILD_TYPE=Debug -DCURLUI_SANITIZE=ON -DCURLUI_BUILD_GUI=OFF
@@ -141,6 +142,7 @@ jobs:
           python tests/live/test_params.py --ui build/Release/curl-ui.exe
           python tests/live/test_forms.py --ui build/Release/curl-ui.exe
           python tests/live/test_store.py --ui build/Release/curl-ui.exe
+          python tests/live/test_import.py --ui build/Release/curl-ui.exe
       - name: Package
         working-directory: build
         run: cpack -C Release
@@ -201,6 +203,7 @@ jobs:
           python3 tests/live/test_params.py --ui "build/curl UI.app/Contents/MacOS/curl UI"
           python3 tests/live/test_forms.py --ui "build/curl UI.app/Contents/MacOS/curl UI"
           python3 tests/live/test_store.py --ui "build/curl UI.app/Contents/MacOS/curl UI"
+          python3 tests/live/test_import.py --ui "build/curl UI.app/Contents/MacOS/curl UI"
       - name: Package
         run: cd build && cpack
       - name: Open the .dmg and run the app from it

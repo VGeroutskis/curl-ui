@@ -4,6 +4,7 @@
 #endif
 #include "argfile.h"
 #include "builder.h"
+#include "cmdparse.h"
 #include "collection.h"
 #include "fileio.h"
 #include "forms.h"
@@ -1069,6 +1070,120 @@ static void test_history(void)
   remove(path);
 }
 
+static int parses(const char *text, request *r, char *method)
+{
+  char err[256];
+  request_init(r);
+  method[0] = '\0';
+  return cmd_parse(text, r, method, 16, err, sizeof(err));
+}
+
+static void refused(const char *text, const char *must_say)
+{
+  request r;
+  char method[16], err[256];
+  request_init(&r);
+  err[0] = '\0';
+  if(cmd_parse(text, &r, method, sizeof(method), err, sizeof(err)) != -1)
+    printf("accepted: %s\n", text);
+  CHECK(strstr(err, must_say) != NULL);
+  if(!strstr(err, must_say))
+    printf("for [%s] said [%s]\n", text, err);
+  CHECK(r.nsel == 0 && r.url[0] == '\0');
+  request_free(&r);
+}
+
+static void test_cmdparse(void)
+{
+  request r;
+  char method[16];
+  int i;
+
+  CHECK(parses("curl -sSL https://a", &r, method) == 0);
+  CHECK(r.nsel == 3);
+  CHECK(has_opt(&r, "silent") && has_opt(&r, "show-error") && has_opt(&r, "location"));
+  CHECK_STR(r.url, "https://a");
+  request_free(&r);
+
+  CHECK(parses("-XPOST -d@file --no-location http://x/", &r, method) == 0);  /* no leading curl */
+  CHECK_STR(method, "POST");
+  CHECK(!has_opt(&r, "request"));
+  CHECK_STR(opt_value(&r, "data", 0), "@file");
+  CHECK(r.sel[request_find(&r, options_find("location"))].negated == 1);
+  request_free(&r);
+
+  CHECK(parses("curl -X DELETE 'http://x/?a=1&b=2'", &r, method) == 0);
+  CHECK_STR(method, "DELETE");
+  CHECK_STR(r.url, "http://x/?a=1&b=2");
+  request_free(&r);
+
+  /* a method the menu does not have stays an option */
+  CHECK(parses("curl -X PURGE http://x/", &r, method) == 0);
+  CHECK_STR(method, "");
+  CHECK_STR(opt_value(&r, "request", 0), "PURGE");
+  request_free(&r);
+
+  /* quoting, and a value kept whole */
+  CHECK(parses("curl -H \"a b\" -H 'c\"d' -H e\\ f -H '$HOME' -H \"C:\\x\" -H \"q\\\"r\" http://x/", &r, method) == 0);
+  CHECK_STR(opt_value(&r, "header", 0), "a b");
+  CHECK_STR(opt_value(&r, "header", 1), "c\"d");
+  CHECK_STR(opt_value(&r, "header", 2), "e f");
+  CHECK_STR(opt_value(&r, "header", 3), "$HOME");
+  CHECK_STR(opt_value(&r, "header", 4), "C:\\x");
+  CHECK_STR(opt_value(&r, "header", 5), "q\"r");
+  request_free(&r);
+
+  CHECK(parses("curl \\\n  --header 'A: 1' \\\r\n  http://x/\n", &r, method) == 0);
+  CHECK_STR(opt_value(&r, "header", 0), "A: 1");
+  CHECK_STR(r.url, "http://x/");
+  request_free(&r);
+
+  CHECK(parses("curl --url http://x/ -d a -d b --data-raw '{\"k\": \"{{v}}\"}'", &r, method) == 0);
+  CHECK_STR(r.url, "http://x/");
+  CHECK_STR(opt_value(&r, "data", 1), "b");
+  CHECK_STR(opt_value(&r, "data-raw", 0), "{\"k\": \"{{v}}\"}");
+  request_free(&r);
+
+  refused("curl --nope http://x/", "--nope");
+  refused("curl -H", "-H");
+  refused("curl -! http://x/", "-!");
+  refused("curl 'open", "quote");
+  refused("curl \"open", "quote");
+  refused("curl http://x/ --next http://y/", "--next");
+  refused("curl http://x/ http://y/", "URL");
+  refused("curl $HOME", "$");
+  refused("curl $(x)", "$");
+  refused("curl \"$(x)\"", "$");
+  refused("curl `x`", "`");
+  refused("curl http://x/ | jq", "|");
+  refused("curl http://x/; ls", ";");
+  refused("curl http://x/ & ", "&");
+  refused("curl http://x/ < f", "<");
+  refused("curl http://x/ > f", ">");
+  refused("curl http://x/ ^\n -H a", "^");
+  refused("", "empty");
+
+  /* every option there is parses to itself */
+  for(i = 0; i < g_option_count; i++) {
+    const opt_def *o = &g_options[i];
+    char text[256];
+    if(!strcmp(o->name, "next") || !strcmp(o->name, "url") || !strcmp(o->name, "request"))
+      continue;
+    snprintf(text, sizeof(text), "curl --%s%s http://x/", o->name, o->arg[0] ? " v" : "");
+    CHECK(parses(text, &r, method) == 0);
+    if(request_find(&r, i) < 0)
+      printf("not parsed: %s\n", text);
+    CHECK(request_find(&r, i) >= 0);
+    request_free(&r);
+    if(o->short_flag[0]) {
+      snprintf(text, sizeof(text), "curl -%s%s http://x/", o->short_flag, o->arg[0] ? " v" : "");
+      CHECK(parses(text, &r, method) == 0);
+      CHECK(request_find(&r, i) >= 0);
+      request_free(&r);
+    }
+  }
+}
+
 static void test_args_remove_stale(void)
 {
   char a[1024], b[1024];
@@ -1113,6 +1228,7 @@ int main(int argc, char **argv)
   test_reqjson();
   test_collection();
   test_history();
+  test_cmdparse();
   printf("%d checks, %d failed\n", g_checks, g_fail);
   return g_fail ? 1 : 0;
 }

@@ -765,6 +765,11 @@ int main(int argc, char **argv)
       if(tab_new(a) >= 0)
         app_open_history(a, a->hist.n - 1 - back);
     }
+    else if(!strcmp(arg, "--import-cmd")) {
+      char err[256];
+      if(app_import_command(a, NEXT(), err, sizeof(err)))
+        app_notice(a, err);
+    }
     else if(!strcmp(arg, "--sidebar")) {
       const char *v = NEXT();
       a->sidebar = !strcmp(v, "collections") ? SIDE_COLLECTIONS : !strcmp(v, "history") ? SIDE_HISTORY : SIDE_OPTIONS;

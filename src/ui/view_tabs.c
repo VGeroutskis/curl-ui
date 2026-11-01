@@ -24,7 +24,7 @@ void view_tabs(app_t *a, struct nk_rect r)
   const palette *p = &a->pal;
   struct nk_command_buffer *cv = nk_window_get_canvas(a->ctx);
   float vars_w = a->show_vars ? 100.0f : 0.0f;
-  float w = (r.w - PLUS_W - 8 - vars_w) / (float)a->ntabs;
+  float w = (r.w - PLUS_W - 72 - vars_w) / (float)a->ntabs;
   float x = r.x;
   char title[128];
   int i, close = -1;
@@ -82,6 +82,8 @@ void view_tabs(app_t *a, struct nk_rect r)
     a->show_vars = 0;
     a->pending_unfocus = 1;
   }
+  if(ui_button(a, nk_rect(x + PLUS_W + 4, r.y + 3, 60, r.h - 6), "Import", BTN_GHOST))
+    dialog_open(a, DLG_IMPORT, NULL);
   if(close >= 0)
     app_request_close(a, close);
 }

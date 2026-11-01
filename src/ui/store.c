@@ -1,5 +1,6 @@
 /* Saving: what open tabs and the tree of collections do with the core's files. */
 #include "app.h"
+#include "cmdparse.h"
 #include "fileio.h"
 #include "reqjson.h"
 
@@ -301,6 +302,35 @@ void app_open_history(app_t *a, int index)
   a->pending_unfocus = 1;
 }
 
+int app_import_command(app_t *a, const char *text, char *err, size_t errn)
+{
+  request r;
+  char method[16];
+  tab_t *t;
+  int i;
+  request_init(&r);
+  if(cmd_parse(text, &r, method, sizeof(method), err, errn)) {
+    request_free(&r);
+    return -1;
+  }
+  if(!tab_is_blank(CUR(a)) && tab_new(a) < 0) {
+    request_free(&r);
+    snprintf(err, errn, "Too many tabs are open");
+    return -1;
+  }
+  t = CUR(a);
+  request_free(&t->req);
+  t->req = r;
+  t->method = 0;
+  for(i = 1; i < METHOD_COUNT; i++)
+    if(!strcmp(g_method_names[i], method))
+      t->method = i;
+  t->form = FORM_CURL;
+  a->show_vars = a->show_settings = 0;
+  a->pending_unfocus = 1;
+  return 0;
+}
+
 /* ---- at start and at exit ---- */
 
 void app_store_load(app_t *a)
@@ -406,4 +436,6 @@ void app_store_free(app_t *a)
   free(a->dlg_targets);
   a->dlg_targets = NULL;
   history_free(&a->hist);
+  free(a->import_text);
+  a->import_text = NULL;
 }
