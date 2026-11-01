@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 # must precede project() to take effect
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Oldest macOS supported")
-project(curl-ui VERSION 0.2.1 LANGUAGES C)
+project(curl-ui VERSION 0.2.2 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
@@ -55,6 +55,9 @@ add_executable(test_core tests/test_core.c)
 target_link_libraries(test_core PRIVATE curlui_core)
 set(CURLUI_TEST_CURL "curl" CACHE STRING "curl used by the end-to-end test")
 add_test(NAME core COMMAND test_core $<TARGET_FILE:echoargs> ${CURLUI_TEST_CURL})
+add_executable(test_args tests/test_args.c)
+target_link_libraries(test_args PRIVATE curlui_core)
+add_test(NAME all_args COMMAND test_args $<TARGET_FILE:echoargs> ${CURLUI_TEST_CURL})
 
 # ---- the application ----
 if(CURLUI_BUILD_GUI)

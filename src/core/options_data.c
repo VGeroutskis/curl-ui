@@ -3499,7 +3499,7 @@ const opt_def g_options[] = {
 },
 { "dump-ca-embed", "", "", "Write the embedded CA bundle to standard output",
   "http proxy tls", "TLS", "8.10.0",
-  OPT_KIND_BOOLEAN, "no-dump-ca-embed", 0, 0,
+  OPT_KIND_BOOLEAN, "", 0, 0,
   NULL, see_44, ex_44, "",
   "Write the CA bundle embedded in curl to standard output, then quit.\n"
     "\n"
@@ -3838,7 +3838,7 @@ const opt_def g_options[] = {
 },
 { "form-escape", "", "", "Escape form fields using backslash",
   "http upload post imap smtp", "HTTP IMAP SMTP", "7.81.0",
-  OPT_KIND_SINGLE, "", 0, 0,
+  OPT_KIND_SINGLE, "no-form-escape", 0, 0,
   NULL, see_58, ex_58, "e.g. -F",
   "Pass on names of multipart form fields and files using backslash-escaping\n"
     "instead of percent-encoding."
@@ -4235,7 +4235,7 @@ const opt_def g_options[] = {
 },
 { "http2-prior-knowledge", "", "", "Use HTTP/2 without HTTP/1.1 Upgrade",
   "http", "HTTP", "7.49.0",
-  OPT_KIND_BOOLEAN, "no-http2-prior-knowledge", 0, 0,
+  OPT_KIND_BOOLEAN, "", 0, 0,
   mx_86, see_86, ex_86, "",
   "Issue a non-TLS HTTP request using HTTP/2 directly without HTTP/1.1 Upgrade.\n"
     "It requires prior knowledge that the server supports HTTP/2 straight away.\n"
@@ -4622,7 +4622,7 @@ const opt_def g_options[] = {
 { "limit-rate", "", "<speed>", "Limit transfer speed to RATE",
   "connection", "", "7.10",
   OPT_KIND_SINGLE, "", 0, 0,
-  NULL, see_109, ex_109, "e.g. 123.45K",
+  NULL, see_109, ex_109, "e.g. 100K",
   "Specify the maximum transfer rate you want curl to use - for both downloads\n"
     "and uploads. This feature is useful if you have a limited pipe and you would\n"
     "like your transfer not to use your entire bandwidth. To make it slower than it\n"
@@ -4849,7 +4849,7 @@ const opt_def g_options[] = {
 },
 { "metalink", "", "", "Process given URLs as metalink XML file",
   "deprecated", "", "7.27.0",
-  OPT_KIND_SINGLE, "", 0, 1,
+  OPT_KIND_SINGLE, "no-metalink", 0, 1,
   NULL, see_123, ex_123, "e.g. file",
   "This option was previously used to specify a Metalink resource. Metalink\n"
     "support is disabled in curl for security reasons (added in 7.78.0)."
@@ -5086,7 +5086,7 @@ const opt_def g_options[] = {
 },
 { "ntlm-wb", "", "", "HTTP NTLM authentication with winbind",
   "deprecated", "HTTP", "7.22.0",
-  OPT_KIND_MUTEX, "", 0, 1,
+  OPT_KIND_MUTEX, "no-ntlm-wb", 0, 1,
   NULL, see_139, ex_139, "e.g. -u",
   "Deprecated option (added in 8.8.0).\n"
     "\n"
@@ -5105,7 +5105,7 @@ const opt_def g_options[] = {
 },
 { "out-null", "", "", "Discard response data into the void",
   "output", "", "8.16.0",
-  OPT_KIND_PER_URL, "", 0, 0,
+  OPT_KIND_PER_URL, "no-out-null", 0, 0,
   NULL, see_141, ex_141, "",
   "Discard all response output of a transfer silently. This is the more\n"
     "efficient and portable version of\n"
@@ -5473,7 +5473,7 @@ const opt_def g_options[] = {
 },
 { "proxy-anyauth", "", "", "Pick any proxy authentication method",
   "proxy auth", "", "7.13.2",
-  OPT_KIND_CUSTOM, "", 0, 0,
+  OPT_KIND_CUSTOM, "no-proxy-anyauth", 0, 0,
   NULL, see_160, ex_160, "e.g. --proxy-user",
   "Automatically pick a suitable authentication method when communicating with\n"
     "the given HTTP proxy. This might cause an extra request/response round-trip."
@@ -5667,7 +5667,7 @@ const opt_def g_options[] = {
 },
 { "proxy-negotiate", "", "", "HTTP Negotiate (SPNEGO) auth with the proxy",
   "proxy auth", "", "7.17.1",
-  OPT_KIND_MUTEX, "", 0, 0,
+  OPT_KIND_MUTEX, "no-proxy-negotiate", 0, 0,
   NULL, see_176, ex_176, "e.g. --proxy-user",
   "Use HTTP Negotiate (SPNEGO) authentication when communicating with the given\n"
     "proxy. Use --negotiate for enabling HTTP Negotiate (SPNEGO) with a remote\n"
@@ -6072,7 +6072,7 @@ const opt_def g_options[] = {
 },
 { "remote-name", "O", "", "Write output to file named as remote file",
   "important output", "", "4.0",
-  OPT_KIND_PER_URL, "", 0, 0,
+  OPT_KIND_PER_URL, "no-remote-name", 0, 0,
   NULL, see_199, ex_199, "e.g. https://example.com/filename",
   "Write output to a local file named like the remote file we get. (Only the file\n"
     "part of the remote file is used, the path is cut off.)\n"
@@ -6498,7 +6498,7 @@ const opt_def g_options[] = {
 },
 { "socks5-basic", "", "", "Username/password auth for SOCKS5 proxies",
   "proxy auth", "", "7.55.0",
-  OPT_KIND_MUTEX, "", 0, 0,
+  OPT_KIND_MUTEX, "no-socks5-basic", 0, 0,
   NULL, see_222, ex_222, "e.g. --socks5",
   "Use username/password authentication when connecting to a SOCKS5 proxy. The\n"
     "username/password authentication is enabled by default. Use --socks5-gssapi to\n"

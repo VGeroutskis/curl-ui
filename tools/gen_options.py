@@ -13,6 +13,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_DOCS = os.path.join(HERE, "..", "..", "docs", "cmdline-opts")
 DEFAULT_OUT = os.path.join(HERE, "..", "src", "core", "options_data.c")
 EXAMPLE_URL = "https://example.com"
+# The docs' example needs a newer curl than many people have.
+PLACEHOLDERS = {"limit-rate": "e.g. 100K"}
 KINDS = {
     "single": "OPT_KIND_SINGLE",
     "boolean": "OPT_KIND_BOOLEAN",
@@ -21,6 +23,15 @@ KINDS = {
     "custom": "OPT_KIND_CUSTOM",
     "per-URL": "OPT_KIND_PER_URL",
 }
+
+
+def getparam_table(docs):
+    """name -> type from curl's own option table: the truth about what parses.
+    The docs' Multi: boolean is not, it is wrong for http2-prior-knowledge."""
+    path = os.path.join(docs, "..", "..", "src", "tool_getparam.c")
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    return {m[0]: m[1] for m in re.findall(r'\{\s*"([a-z0-9.-]+)",\s*(ARG_[A-Z]+)', text)}
 
 
 def parse(path):
@@ -117,6 +128,7 @@ def c_list(symbol, items, out):
 def main():
     docs = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_DOCS
     target = sys.argv[2] if len(sys.argv) > 2 else DEFAULT_OUT
+    table = getparam_table(docs)
     records = []
     for fname in sorted(os.listdir(docs)):
         if not fname.endswith(".md") or fname.startswith("_"):
@@ -134,9 +146,17 @@ def main():
         if isinstance(meta.get("Example"), str):
             raw = [meta["Example"]]
         examples = ["curl " + e.replace("$URL", EXAMPLE_URL) for e in raw]
+        # --no-foo is documented under its own name, but the table lists foo
+        base = name[3:] if name.startswith("no-") and name not in table else name
+        kind = table.get(base)
+        if not kind:
+            raise SystemExit("%s: --%s is not in tool_getparam.c" % (fname, name))
+        if bool(arg) != (kind not in ("ARG_NONE", "ARG_BOOL")):
+            raise SystemExit("%s: docs and tool_getparam.c disagree about the argument" % fname)
         neg = ""
-        if multi == "boolean" and not arg:
-            neg = name[3:] if name.startswith("no-") else "no-" + name
+        # --no-version and --no-manual parse, but there is nothing to turn off
+        if kind == "ARG_BOOL" and name not in ("version", "manual"):
+            neg = base if base != name else "no-" + name
         repeat = bool(arg) and multi in ("append", "per-URL")
         description = clean_body(name, body)
         if len(description) > 60000:
@@ -148,7 +168,7 @@ def main():
             kind=KINDS[multi], neg=neg, repeat=repeat,
             mutex=as_list(meta.get("Mutexed")),
             see=as_list(meta.get("See-also")), examples=examples,
-            placeholder=placeholder(name, short, raw, arg),
+            placeholder=PLACEHOLDERS.get(name) or placeholder(name, short, raw, arg),
             description=description,
             deprecated="deprecated" in meta.get("Category", "").split(),
         ))

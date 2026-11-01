@@ -73,6 +73,10 @@ static void test_options(void)
   CHECK(g_options[options_find("header")].repeatable);
   CHECK_STR(g_options[options_find("location")].neg, "no-location");
   CHECK_STR(g_options[options_find("no-alpn")].neg, "alpn");
+  /* the docs call this one boolean; curl refuses --no-http2-prior-knowledge */
+  CHECK_STR(g_options[options_find("http2-prior-knowledge")].neg, "");
+  CHECK_STR(g_options[options_find("remote-name")].neg, "no-remote-name");
+  CHECK_STR(g_options[options_find("version")].neg, "");
   CHECK(g_options[options_find("http2")].mutexes != NULL);
   CHECK_STR(g_options[options_find("http2")].mutexes[0], "http1.1");
   CHECK(strstr(g_options[options_find("cookie")].placeholder, "e.g. ") != NULL);
