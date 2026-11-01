@@ -127,10 +127,12 @@ void view_settings(app_t *a, struct nk_rect r)
   row_label(a, x, y, "Program", NULL, w);
   {
     struct nk_rect detect = nk_rect(x + w - 74, y + 1, 74, 28);
-    nk_flags st = ui_edit(a, nk_rect(field_x, y + 1, field_w - 80, 28), set->program, (int)sizeof(set->program), "curl",
+    nk_flags st = ui_edit(a, nk_rect(field_x, y + 1, field_w - 150, 28), set->program, (int)sizeof(set->program), "curl",
                           a->f.mono_small, 0);
     if(st & NK_EDIT_ACTIVE)
       a->settings_focus = 1;
+    if(ui_button(a, nk_rect(detect.x - 70, y + 1, 66, 28), "Browse", BTN_SECONDARY))
+      picker_open(a, FS_PICK_OPEN, PICK_FOR_PROGRAM, 0, 0, set->program);
     if(ui_button(a, detect, "Detect", BTN_SECONDARY)) {
       app_detect_curl(a);
       a->doc_built_opt = -2;
@@ -142,16 +144,22 @@ void view_settings(app_t *a, struct nk_rect r)
   y += 26;
   row_label(a, x, y, "Your config file", NULL, w);
   {
-    nk_flags st = ui_edit(a, nk_rect(field_x, y + 1, field_w, 28), set->config_file, (int)sizeof(set->config_file),
+    nk_flags st = ui_edit(a, nk_rect(field_x, y + 1, field_w - 70, 28), set->config_file, (int)sizeof(set->config_file),
                           "/full/path/to/my-curl.conf, passed as --config", a->f.mono_small, 0);
     if(st & NK_EDIT_ACTIVE)
       a->settings_focus = 1;
+    if(ui_button(a, nk_rect(field_x + field_w - 66, y + 1, 66, 28), "Browse", BTN_SECONDARY))
+      picker_open(a, FS_PICK_OPEN, PICK_FOR_CONFIG, 0, 0, set->config_file);
   }
   y += ROW_H - 8;
   toggle_row(a, x, y, w, "Ignore ~/.curlrc", "Starts every command with --disable", &set->no_curlrc);
   y += ROW_H + 2;
 
   y = heading(a, x, y, w, "Behaviour");
+#ifndef __APPLE__
+  toggle_row(a, x, y, w, "System title bar", "Instead of the buttons in this window; applies at the next start", &set->native_frame);
+  y += ROW_H;
+#endif
   toggle_row(a, x, y, w, "Pretty JSON by default", "Format valid JSON responses", &set->pretty);
   y += ROW_H;
   toggle_row(a, x, y, w, "Fill the Log tab and status chips", "Adds --verbose, --no-progress-meter, --write-out to runs",

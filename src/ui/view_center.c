@@ -203,12 +203,24 @@ static void draw_card(app_t *a, struct nk_rect r, sel_option *s)
     for(j = 0; j < s->nvalues; j++) {
       float fw = w;
       nk_flags st;
+      fs_value_form form;
+      fs_pick_mode mode = fs_option_mode(o->name, &form);
       if(o->repeatable && s->nvalues > 1)
         fw -= 28;
+      if(mode != FS_PICK_NONE)
+        fw -= 70;
       st = ui_edit_dyn(a, nk_rect(x, y, fw, FIELD_H), &s->values[j], &s->caps[j], o->placeholder,
                    a->f.mono_small, 0);
       if(st & NK_EDIT_ACTIVE)
         CUR(a)->cards_focus = 1;
+      if(mode != FS_PICK_NONE) {
+        if(ui_button(a, nk_rect(x + fw + 4, y, 66, FIELD_H), "Browse", BTN_SECONDARY)) {
+          char *start = fs_option_path(o->name, s->values[j]);
+          picker_open(a, mode, PICK_FOR_CARD, s->opt, j, start ? start : "");
+          free(start);
+        }
+        fw += 70;
+      }
       if(o->repeatable && s->nvalues > 1) {
         struct nk_rect del = nk_rect(x + fw + 4, y + 3, 22, 22);
         int hd = ui_hover(a, del);
@@ -607,6 +619,8 @@ void view_center(app_t *a, struct nk_rect r)
     CUR(a)->show_recipes = CUR(a)->form != FORM_CURL || !CUR(a)->show_recipes;
     CUR(a)->form = FORM_CURL;
   }
+  if(CUR(a)->form == FORM_CURL && ui_button(a, nk_rect(x + w - 74 - 70 - 84, y, 80, 24), a->set.docs_hidden ? "Show docs" : "Hide docs", BTN_GHOST))
+    a->set.docs_hidden = !a->set.docs_hidden;
   y += 30;
 
   /* Output height comes from the space really left, not a fixed share. */

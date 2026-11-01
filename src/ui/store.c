@@ -558,6 +558,8 @@ void app_store_free(app_t *a)
   free(a->dlg_targets);
   a->dlg_targets = NULL;
   history_free(&a->hist);
+  picker_close(a);
+  str_list_free(&a->panel_names);
   free(a->import_text);
   a->import_text = NULL;
 }

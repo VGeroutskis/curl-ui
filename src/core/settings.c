@@ -162,6 +162,12 @@ int settings_load(settings_t *s, const char *path)
       s->capture = parse_int(v, 0, 1, s->capture);
     else if(!strcmp(k, "docs_hover_ms"))
       s->hover_ms = parse_int(v, 0, 2000, s->hover_ms);
+    else if(!strcmp(k, "docs_hidden"))
+      s->docs_hidden = parse_int(v, 0, 1, s->docs_hidden);
+    else if(!strcmp(k, "native_frame"))
+      s->native_frame = parse_int(v, 0, 1, s->native_frame);
+    else if(!strcmp(k, "last_dir"))
+      snprintf(s->last_dir, sizeof(s->last_dir), "%s", v);
     else if(!strcmp(k, "reopen_tabs"))
       s->reopen_tabs = parse_int(v, 0, 1, s->reopen_tabs);
     else if(!strcmp(k, "remember_request"))
@@ -197,6 +203,7 @@ int settings_save(const settings_t *s, const char *path)
   fprintf(f, "capture_log=%d\n", s->capture);
   fprintf(f, "docs_hover_ms=%d\n", s->hover_ms);
   fprintf(f, "reopen_tabs=%d\n", s->reopen_tabs);
+  fprintf(f, "docs_hidden=%d\nnative_frame=%d\nlast_dir=%s\n", s->docs_hidden, s->native_frame, s->last_dir);
   fprintf(f, "window_width=%d\n", s->win_w);
   fprintf(f, "window_height=%d\n", s->win_h);
   return file_commit(f, tmp, path);

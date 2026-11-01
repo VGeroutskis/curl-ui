@@ -31,7 +31,7 @@ static app_t g_app;
 static float g_scale = 1.0f;   /* device pixels per UI unit: fonts are baked for it */
 static float g_zoom = 1.0f;    /* UI units per window unit */
 static float g_auto_zoom = 1.0f;
-static SDL_Cursor *g_cursors[3];
+static SDL_Cursor *g_cursors[CURSOR_COUNT];
 static SDL_Renderer *g_renderer;
 static SDL_Window *g_window;
 static double g_frame_ms_total, g_frame_ms_max;
@@ -148,6 +148,63 @@ static void apply_scale(app_t *a, int w, int ow)
   }
 }
 
+static SDL_HitTestResult SDLCALL hit_test(SDL_Window *win, const SDL_Point *pt, void *data)
+{
+  app_t *a = data;
+  (void)win;
+  switch(win_hit_test((float)pt->x / g_zoom, (float)pt->y / g_zoom, a->W, a->H, 48, a->drag_right, a->win_maximized)) {
+  case WIN_HIT_DRAG: return SDL_HITTEST_DRAGGABLE;
+  case WIN_HIT_N: return SDL_HITTEST_RESIZE_TOP;
+  case WIN_HIT_S: return SDL_HITTEST_RESIZE_BOTTOM;
+  case WIN_HIT_E: return SDL_HITTEST_RESIZE_RIGHT;
+  case WIN_HIT_W: return SDL_HITTEST_RESIZE_LEFT;
+  case WIN_HIT_NE: return SDL_HITTEST_RESIZE_TOPRIGHT;
+  case WIN_HIT_NW: return SDL_HITTEST_RESIZE_TOPLEFT;
+  case WIN_HIT_SE: return SDL_HITTEST_RESIZE_BOTTOMRIGHT;
+  case WIN_HIT_SW: return SDL_HITTEST_RESIZE_BOTTOMLEFT;
+  default: return SDL_HITTEST_NORMAL;
+  }
+}
+
+/* The cursor says an edge can be pulled. */
+static void edge_cursor(app_t *a)
+{
+  const struct nk_input *in = &a->ctx->input;
+  if(!a->own_frame || a->win_maximized)
+    return;
+  switch(win_hit_test(in->mouse.pos.x, in->mouse.pos.y, a->W, a->H, 0, a->W, 0)) {
+  case WIN_HIT_N: case WIN_HIT_S: a->cursor = CURSOR_NS; break;
+  case WIN_HIT_E: case WIN_HIT_W: a->cursor = CURSOR_EW; break;
+  case WIN_HIT_NW: case WIN_HIT_SE: a->cursor = CURSOR_NWSE; break;
+  case WIN_HIT_NE: case WIN_HIT_SW: a->cursor = CURSOR_NESW; break;
+  default: break;
+  }
+}
+
+static void window_action(app_t *a)
+{
+  win_do act = a->win_action;
+  a->win_action = WIN_DO_NONE;
+  if(act == WIN_DO_NONE)
+    return;
+  a->win_last = act;
+  if(act == WIN_DO_MIN)
+    SDL_MinimizeWindow(g_window);
+  else if(act == WIN_DO_MAX) {
+    if(SDL_GetWindowFlags(g_window) & SDL_WINDOW_MAXIMIZED)
+      SDL_RestoreWindow(g_window);
+    else
+      SDL_MaximizeWindow(g_window);
+  }
+  else {
+    /* the same way as any other request to close: unsaved work is asked about */
+    SDL_Event ev;
+    memset(&ev, 0, sizeof(ev));
+    ev.type = SDL_QUIT;
+    SDL_PushEvent(&ev);
+  }
+}
+
 static void frame(app_t *a)
 {
   int w, h, ow, oh;
@@ -159,6 +216,7 @@ static void frame(app_t *a)
   a->H = (float)h / g_zoom;
   a->now_ms = SDL_GetTicks();
   a->blink_off = (a->now_ms / 500u) & 1u;
+  a->win_maximized = (SDL_GetWindowFlags(g_window) & SDL_WINDOW_MAXIMIZED) != 0;
   app_poll(a);
 
   t0 = SDL_GetPerformanceCounter();
@@ -172,6 +230,8 @@ static void frame(app_t *a)
     g_frames++;
   }
   app_apply_actions(a);
+  window_action(a);
+  edge_cursor(a);
   apply_cursor(a->cursor);
 
   SDL_SetRenderDrawColor(g_renderer, a->pal.bg.r, a->pal.bg.g, a->pal.bg.b, 255);
@@ -183,7 +243,7 @@ static void frame(app_t *a)
 
 /* ---- scripted test hooks ---- */
 
-typedef enum { SC_MOUSE, SC_CLICK, SC_PASTE, SC_SAVE_AS, SC_MODAL_VALUE, SC_MODAL_ACTION, SC_SELECT_TAB, SC_CLOSE_TAB, SC_TYPE, SC_WHEEL } script_kind;
+typedef enum { SC_MOUSE, SC_CLICK, SC_PASTE, SC_SAVE_AS, SC_MODAL_VALUE, SC_MODAL_ACTION, SC_SELECT_TAB, SC_CLOSE_TAB, SC_TYPE, SC_WHEEL, SC_DOUBLE } script_kind;
 typedef struct {
   script_kind kind;
   int x, y, dy;
@@ -289,6 +349,14 @@ static void run_script(app_t *a, const script_op *ops, int n)
       break;
     case SC_CLICK:
       input_frame(a, feed_motion, op);
+      input_frame(a, feed_down, op);
+      input_frame(a, feed_up, op);
+      settle(a);
+      break;
+    case SC_DOUBLE:
+      input_frame(a, feed_motion, op);
+      input_frame(a, feed_down, op);
+      input_frame(a, feed_up, op);
       input_frame(a, feed_down, op);
       input_frame(a, feed_up, op);
       settle(a);
@@ -419,6 +487,24 @@ static int write_dump(app_t *a, const char *path)
       free(text);
     }
     fprintf(f, "copy_command=%s\n", real ? real : "");
+    {
+      static const char *const modes[] = { "none", "open", "save", "dir" };
+      static const char *const acts[] = { "none", "min", "max", "close" };
+      int curl = CUR(a)->form == FORM_CURL && !a->show_settings && !a->show_vars;
+      fprintf(f, "picker=%d\npicker_mode=%s\npicker_dir=%s\npicker_err=%s\npicker_confirm=%d\nlast_dir=%s\n", a->picker.open,
+              modes[a->picker.mode], a->picker.dir ? a->picker.dir : "", a->picker.err, a->picker.confirm, a->set.last_dir);
+      fprintf(f, "own_frame=%d\nwin_action=%s\nright=%s\npanel_vars=", a->own_frame, acts[a->win_last],
+              !curl ? "request" : a->set.docs_hidden ? "none" : "docs");
+      if(!curl) {
+        var_env *env = app_tab_env(a, CUR(a));
+        context_panel_names(a, CUR(a));
+        for(i = 0; i < a->panel_names.n; i++) {
+          const var_t *v = var_find(env, a->panel_names.s[i]);
+          fprintf(f, "%s%s:%s", i ? "," : "", a->panel_names.s[i], !v ? "missing" : v->secret ? "********" : v->value);
+        }
+      }
+      fputc('\n', f);
+    }
     fclose(f);
   }
   free(real);
@@ -646,6 +732,14 @@ int main(int argc, char **argv)
         return 2;
       }
     }
+    else if(!strcmp(arg, "--double-click") && nops < MAX_SCRIPT) {
+      script_op *op = &ops[nops++];
+      op->kind = SC_DOUBLE;
+      if(sscanf(NEXT(), "%d,%d", &op->x, &op->y) != 2) {
+        fprintf(stderr, "--double-click wants X,Y\n");
+        return 2;
+      }
+    }
     else if(!strcmp(arg, "--wheel") && nops < MAX_SCRIPT) {
       script_op *op = &ops[nops++];
       op->kind = SC_WHEEL;
@@ -786,6 +880,10 @@ int main(int argc, char **argv)
       if(app_import_command(a, NEXT(), err, sizeof(err)))
         app_notice(a, err);
     }
+    else if(!strcmp(arg, "--import-dialog"))
+      dialog_open(a, DLG_IMPORT, NULL);
+    else if(!strcmp(arg, "--native-frame"))
+      a->set.native_frame = 1;
     else if(!strcmp(arg, "--quit"))
       a->quit = 1;
     else if(!strcmp(arg, "--set-body-off")) {
@@ -857,13 +955,20 @@ int main(int argc, char **argv)
     win_w = MIN_W;
   if(win_h < MIN_H && !screenshot)
     win_h = MIN_H;
+#ifndef __APPLE__
+  /* A Mac keeps its own buttons, where people expect them. */
+  a->own_frame = !a->set.native_frame;
+#endif
   g_window = SDL_CreateWindow("curl UI", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, win_w, win_h,
-                              SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | (screenshot ? SDL_WINDOW_HIDDEN : SDL_WINDOW_SHOWN));
+                              SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI | (a->own_frame ? SDL_WINDOW_BORDERLESS : 0) |
+                              (screenshot ? SDL_WINDOW_HIDDEN : SDL_WINDOW_SHOWN));
   if(!g_window) {
     fprintf(stderr, "SDL_CreateWindow: %s\n", SDL_GetError());
     return 1;
   }
   SDL_SetWindowMinimumSize(g_window, MIN_W, MIN_H);
+  if(a->own_frame && SDL_SetWindowHitTest(g_window, hit_test, a) && g_trace)
+    fprintf(stderr, "no hit test: %s\n", SDL_GetError());
   if(screenshot)
     render_flags = SDL_RENDERER_SOFTWARE;
   g_renderer = SDL_CreateRenderer(g_window, -1, render_flags);
@@ -898,6 +1003,10 @@ int main(int argc, char **argv)
   g_cursors[CURSOR_ARROW] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_ARROW);
   g_cursors[CURSOR_HAND] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_HAND);
   g_cursors[CURSOR_IBEAM] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_IBEAM);
+  g_cursors[CURSOR_NS] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_SIZENS);
+  g_cursors[CURSOR_EW] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_SIZEWE);
+  g_cursors[CURSOR_NWSE] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_SIZENWSE);
+  g_cursors[CURSOR_NESW] = SDL_CreateSystemCursor(SDL_SYSTEM_CURSOR_SIZENESW);
 
   app_detect_curl(a);
   if(method) {
@@ -1032,7 +1141,7 @@ int main(int argc, char **argv)
         else
           a->quit = 1;
       }
-      if(ev.type == SDL_KEYDOWN && (ev.key.keysym.mod & (KMOD_CTRL | KMOD_GUI)) && !a->modal_open && a->dlg == DLG_NONE) {
+      if(ev.type == SDL_KEYDOWN && (ev.key.keysym.mod & (KMOD_CTRL | KMOD_GUI)) && !a->modal_open && a->dlg == DLG_NONE && !a->picker.open) {
         if(ev.key.keysym.sym == SDLK_s)
           app_save_current(a);
         else if(ev.key.keysym.sym == SDLK_t) {
@@ -1045,6 +1154,8 @@ int main(int argc, char **argv)
         else if(ev.key.keysym.sym == SDLK_RETURN && !CUR(a)->proc)
           app_run(a);
       }
+      if(ev.type == SDL_KEYDOWN && ev.key.keysym.sym == SDLK_ESCAPE && a->picker.open)
+        a->picker.pending = 2;
       /* the UI is laid out in zoomed units, SDL reports window units */
       if(ev.type == SDL_MOUSEMOTION) {
         ev.motion.x = (Sint32)((float)ev.motion.x / g_zoom);
@@ -1088,7 +1199,7 @@ int main(int argc, char **argv)
     printf("frames %ld, UI time avg %.3f ms, max %.3f ms\n", g_frames, g_frame_ms_total / (double)g_frames, g_frame_ms_max);
   app_free(a);
   nk_sdl_shutdown();
-  for(i = 0; i < 3; i++)
+  for(i = 0; i < CURSOR_COUNT; i++)
     if(g_cursors[i])
       SDL_FreeCursor(g_cursors[i]);
   SDL_DestroyRenderer(g_renderer);

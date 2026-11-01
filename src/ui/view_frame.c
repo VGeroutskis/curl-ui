@@ -39,9 +39,52 @@ void view_header(app_t *a, struct nk_rect r)
   snprintf(tmp, sizeof(tmp), "All %d options, explained", g_option_count);
   ui_text(a, a->f.sans, x, cy - a->f.sans->height / 2, tmp, (int)strlen(tmp), p->dim);
 
-  /* right: version pill, theme */
+  /* right: version pill, theme, then the window's own buttons */
   {
     float right = r.x + r.w - 14;
+    if(a->own_frame) {
+      static const float bw = 40;
+      struct nk_rect close = nk_rect(r.x + r.w - bw, r.y, bw, r.h - 1);
+      struct nk_rect max = nk_rect(close.x - bw, r.y, bw, r.h - 1);
+      struct nk_rect min = nk_rect(max.x - bw, r.y, bw, r.h - 1);
+      struct nk_color c;
+      float mx;
+      int h;
+      h = ui_hover(a, min);
+      if(h)
+        ui_rect(a, min, 0, p->hover);
+      c = h ? p->text : p->dim;
+      mx = min.x + bw / 2;
+      nk_stroke_line(cv, mx - 6, cy + 5, mx + 6, cy + 5, 1.4f, c);
+      if(ui_clicked(a, min))
+        a->win_action = WIN_DO_MIN;
+      h = ui_hover(a, max);
+      if(h)
+        ui_rect(a, max, 0, p->hover);
+      c = h ? p->text : p->dim;
+      mx = max.x + bw / 2;
+      if(a->win_maximized) {  /* two windows: restore */
+        nk_stroke_rect(cv, nk_rect(mx - 3, cy - 6, 9, 9), 1, 1.3f, c);
+        nk_fill_rect(cv, nk_rect(mx - 6, cy - 3, 9, 9), 1, h ? p->hover : p->panel);
+        nk_stroke_rect(cv, nk_rect(mx - 6, cy - 3, 9, 9), 1, 1.3f, c);
+      }
+      else
+        nk_stroke_rect(cv, nk_rect(mx - 6, cy - 6, 12, 12), 1, 1.4f, c);
+      if(ui_clicked(a, max))
+        a->win_action = WIN_DO_MAX;
+      h = ui_hover(a, close);
+      if(h)
+        ui_rect(a, close, 0, p->red);
+      c = h ? p->on_accent : p->dim;
+      mx = close.x + bw / 2;
+      nk_stroke_line(cv, mx - 6, cy - 6, mx + 6, cy + 6, 1.4f, c);
+      nk_stroke_line(cv, mx - 6, cy + 6, mx + 6, cy - 6, 1.4f, c);
+      if(ui_clicked(a, close))
+        a->win_action = WIN_DO_CLOSE;
+      if(ui_hover(a, nk_rect(min.x, r.y, bw * 3, r.h)))
+        a->cursor = CURSOR_HAND;
+      right = min.x - 12;
+    }
     struct nk_rect theme = nk_rect(right - 30, cy - 15, 30, 30);
     int ht = ui_hover(a, theme);
     float tx = theme.x + 15;
@@ -85,6 +128,7 @@ void view_header(app_t *a, struct nk_rect r)
       }
       {
         struct nk_rect gear = nk_rect(pill.x - 8 - 76, cy - 13, 76, 26);
+        a->drag_right = gear.x - 4;
         if(ui_button(a, gear, "Settings", a->show_settings ? BTN_PRIMARY : BTN_SECONDARY)) {
           nk_edit_unfocus(a->ctx);
           a->show_settings = !a->show_settings;
@@ -100,7 +144,9 @@ void view_frame(app_t *a)
   struct nk_context *ctx = a->ctx;
   float top = HEADER_H + TABS_H;
   float lib_w = NK_CLAMP(300, a->W * 0.24f, 380);
-  float doc_w = NK_CLAMP(340, a->W * 0.29f, 480);
+  /* the docs belong to the options; anywhere else this place tells about the request */
+  int on_curl = CUR(a)->form == FORM_CURL && !a->show_settings && !a->show_vars;
+  float doc_w = on_curl && a->set.docs_hidden ? 0 : NK_CLAMP(340, a->W * 0.29f, 480);
   struct nk_rect full = nk_rect(0, 0, a->W, a->H);
   struct nk_rect center = nk_rect(lib_w, top, a->W - lib_w - doc_w, a->H - top);
   struct nk_input *in = &ctx->input;
@@ -109,7 +155,8 @@ void view_frame(app_t *a)
   struct nk_vec2 saved_scroll = in->mouse.scroll_delta;
   int menu_was_open = CUR(a)->method_menu;
   int env_was_open = a->env_menu;
-  int modal_was_open = a->modal_open || a->dlg != DLG_NONE;
+  int picker_was_open = a->picker.open;
+  int modal_was_open = a->modal_open || a->dlg != DLG_NONE || picker_was_open;
   int tree_was_open = a->tree_menu != NULL;
 
   a->big_paste = 0;
@@ -190,7 +237,10 @@ void view_frame(app_t *a)
       view_vars(a, center);
     else
       view_center(a, center);
-    view_docs(a, nk_rect(a->W - doc_w, top, doc_w, a->H - top));
+    if(!on_curl)
+      view_context(a, nk_rect(a->W - doc_w, top, doc_w, a->H - top));
+    else if(doc_w > 0)
+      view_docs(a, nk_rect(a->W - doc_w, top, doc_w, a->H - top));
     if(menu_was_open && CUR(a)->method_menu) {
       in->mouse.pos = saved_pos;
       center_draw_menu(a, center);
@@ -203,18 +253,28 @@ void view_frame(app_t *a)
       in->mouse.pos = saved_pos;
       tree_menu_draw(a);
     }
-    if(modal_was_open && (a->modal_open || a->dlg != DLG_NONE)) {
-      in->mouse.pos = saved_pos;
-      in->mouse.buttons[NK_BUTTON_LEFT] = saved_left;
-      in->mouse.scroll_delta = saved_scroll;
+    if(modal_was_open && (a->modal_open || a->dlg != DLG_NONE || a->picker.open)) {
+      /* the picker can stand over a dialog, which then only shows */
+      if(!picker_was_open || !a->picker.open) {
+        in->mouse.pos = saved_pos;
+        in->mouse.buttons[NK_BUTTON_LEFT] = saved_left;
+        in->mouse.scroll_delta = saved_scroll;
+      }
       if(a->modal_open)
         view_modal(a);
-      else
+      else if(a->dlg != DLG_NONE)
         view_dialog(a);
+      if(picker_was_open && a->picker.open) {
+        in->mouse.pos = saved_pos;
+        in->mouse.buttons[NK_BUTTON_LEFT] = saved_left;
+        in->mouse.scroll_delta = saved_scroll;
+        view_picker(a);
+      }
     }
     nk_layout_space_end(ctx);
   }
   nk_end(ctx);
+  picker_run_pending(a);
   dialog_run_pending(a);
   app_tabs_update_dirty(a);
   if(a->modal_pending != MODAL_NONE) {
@@ -230,6 +290,8 @@ void view_frame(app_t *a)
   /* Docs follow the mouse, after a short dwell: moving across the middle
      column on the way to read them must not replace what is being read. */
   a->wants_timer = CUR(a)->copied_secret_at != 0;
+  if(!on_curl || a->set.docs_hidden)
+    a->hover_frame = -1;  /* nothing to show them in */
   if(a->hover_frame != a->hover_cand) {
     a->hover_cand = a->hover_frame;
     a->hover_since = a->now_ms;

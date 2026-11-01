@@ -105,9 +105,17 @@ it is not on `PATH`, click the version pill in the header and enter its path und
   Show all link to see it anyway. Removing an option brings back what it ruled out. Deprecated
   options stay out of the list unless you search or use the Deprecated filter under More, which
   is why it starts at 269 of 278. Recipes are starting points.
-- **Right:** hover a library row, a card, a form row or a flag in the command and that
-  option's full documentation appears, and stays while you move over to read. Every
-  `--option` in it is a link.
+- **Right, on Curl:** hover a library row, a card or a flag in the command and that option's
+  full documentation appears, and stays while you move over to read. Every `--option` in it is
+  a link. Hide docs and Show docs close and open the panel, and the choice is kept.
+- **Right, elsewhere:** This request: its collection, a choice of environment, and the variables
+  it uses with their values, secrets hidden and missing ones marked.
+- **Window:** on Linux and Windows the header has the buttons to minimize, maximize and close,
+  drags the window, and its edges resize it. A Mac keeps its own buttons.
+- **Files:** wherever a value is a file or a folder there is a Browse button beside the field:
+  Body, Form data rows, Import, Settings, and the option cards. `--output` asks to save and warns
+  about an existing file, `--capath` takes a folder, `--data` gets `@path`, and `--cert` keeps
+  its `:password`. The picker opens in the last folder used. You can still type the path.
 
 | Keys | Action |
 |---|---|
@@ -204,10 +212,11 @@ the values in bold.
 | Pretty JSON by default | **On**, Off | Formats valid JSON responses | `pretty_json`: `1`, `0` |
 | Fill the Log tab and status chips | **On**, Off | Adds `--verbose`, `--no-progress-meter` and `--write-out` to runs | `capture_log`: `1`, `0` |
 | Reopen tabs | **On**, Off | Open tabs come back at the next start | `reopen_tabs`: `1`, `0` |
+| System title bar | On, **Off** | The system's title bar instead of the buttons in the header, at the next start. Not on a Mac | `native_frame`: `1`, `0` |
 | Docs hover delay | Instant, **Normal**, Slow | How long to hover before the docs change | `docs_hover_ms`: `0`, `110`, `300` |
 
-The window size is kept too, as `window_width` and `window_height`, with no control
-in the app.
+The window size is kept too, as `window_width` and `window_height`, as are `docs_hidden` and
+the picker's `last_dir`, with no control in Settings.
 
 The settings are a plain text file you can edit while the app is closed:
 
@@ -326,7 +335,9 @@ saves the image and exits; `SDL_VIDEODRIVER=dummy` makes that work headless.
 | `--set-body KIND TEXT`, `--set-auth KIND A B` | fill a form, as kinds `raw`, `json`, `file`, `urlencoded`, `form-data`, `form-data-file`, and `basic`, `digest`, `bearer`, `apikey-header`, `apikey-query` |
 | `--sidebar collections\|history` | show a left view |
 | `--save-as COLLECTION/FOLDER/NAME`, `--open-node ID`, `--open-history N` | save and open requests |
-| `--import-cmd TEXT` | import a curl command |
+| `--import-cmd TEXT`, `--import-dialog` | import a curl command; open the Import dialog |
+| `--double-click X,Y` | scripted double click |
+| `--native-frame` | the system's title bar, for this run and those after it |
 | `--set-body-off K=V` | add a body row switched off |
 | `--quit` | exit as soon as the app has started |
 | `--stats` | print UI time per frame |
@@ -344,6 +355,7 @@ saves the image and exits; `SDL_VIDEODRIVER=dummy` makes that work headless.
     collection, history, cmdparse  saved requests, runs, a pasted command
     argfile       arguments too long for a command line
     fileio        private files, replaced whole
+    fsdir         folders and paths for the picker, which options take a path, the title bar's areas
     builder       options -> argv, shell-quoted preview
     procrun       posix_spawn / CreateProcessW runner
     outbuf        thread-safe, line-indexed, sanitizing output buffer
@@ -384,7 +396,9 @@ saves the image and exits; `SDL_VIDEODRIVER=dummy` makes that work headless.
   into Set by options. `-H 'Accept:'`, which removes a header, loses that meaning when another
   row changes. `?flag` becomes `?flag=` when the Params table changes.
 - Import: `-d ''` loses its empty value, so the request becomes a GET.
-- No native file picker: type paths into the value fields.
+- The file picker is the app's own, the same everywhere: it has none of the system's favourites or
+  previews. Double clicking the title bar does not maximize, except on Windows.
+- A Form data row cannot hold a path with `,` or `;`: Browse says so, and `--form` on Curl takes it.
 - An option with an empty value is left out of the command, so a deliberately
   empty argument such as `-A ""` cannot be expressed.
 - Options keep the order they were added, with the URL last. `--next` sequences that need

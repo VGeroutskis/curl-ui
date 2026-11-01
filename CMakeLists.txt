@@ -35,7 +35,7 @@ add_library(curlui_core STATIC
   src/core/curlinfo.c src/core/docs.c src/core/settings.c
   src/core/json.c src/core/fileio.c src/core/argfile.c
   src/core/urlquery.c src/core/vars.c src/core/mask.c src/core/forms.c
-  src/core/reqjson.c src/core/collection.c src/core/history.c src/core/cmdparse.c)
+  src/core/reqjson.c src/core/collection.c src/core/history.c src/core/cmdparse.c src/core/fsdir.c)
 target_include_directories(curlui_core PUBLIC src/core)
 target_link_libraries(curlui_core PUBLIC Threads::Threads)
 if(NOT WIN32)
@@ -65,6 +65,9 @@ add_test(NAME all_args COMMAND test_args $<TARGET_FILE:echoargs> ${CURLUI_TEST_C
 add_executable(test_api tests/test_api.c)
 target_link_libraries(test_api PRIVATE curlui_core)
 add_test(NAME api COMMAND test_api ${CMAKE_CURRENT_BINARY_DIR}/api-scratch)
+add_executable(test_fsdir tests/test_fsdir.c)
+target_link_libraries(test_fsdir PRIVATE curlui_core)
+add_test(NAME fsdir COMMAND test_fsdir ${CMAKE_CURRENT_BINARY_DIR}/fsdir-scratch)
 
 # ---- the application ----
 if(CURLUI_BUILD_GUI)
@@ -96,7 +99,7 @@ if(CURLUI_BUILD_GUI)
   set(CURLUI_SOURCES
     src/ui/main.c src/ui/app.c src/ui/theme.c src/ui/draw.c src/ui/fonts_data.c
     src/ui/view_frame.c src/ui/view_tabs.c src/ui/view_vars.c src/ui/view_modal.c src/ui/view_forms.c src/ui/store.c src/ui/view_collections.c src/ui/view_library.c src/ui/view_center.c
-    src/ui/view_output.c src/ui/view_docs.c src/ui/view_settings.c)
+    src/ui/view_output.c src/ui/view_docs.c src/ui/view_settings.c src/ui/view_picker.c src/ui/view_context.c)
   if(WIN32)
     list(APPEND CURLUI_SOURCES packaging/curl-ui.rc packaging/curl-ui.manifest)
     if(MINGW)

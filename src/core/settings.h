@@ -19,6 +19,9 @@ typedef struct {
   int capture;        /* add --verbose etc. for the Log tab and status chips */
   int hover_ms;       /* docs panel hover delay */
   int reopen_tabs;    /* open tabs come back at the next start */
+  int docs_hidden;    /* the docs panel on Curl is closed */
+  int native_frame;   /* the system's title bar instead of ours */
+  char last_dir[SETTINGS_PATH_CAP];  /* where the file picker opens */
   int legacy_remember; /* an older version kept one request in last-request.txt */
   int win_w, win_h;   /* 0 means the default size */
 } settings_t;

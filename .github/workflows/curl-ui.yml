@@ -53,6 +53,7 @@ jobs:
           python3 tests/live/test_forms.py --ui build/curl-ui
           python3 tests/live/test_store.py --ui build/curl-ui
           python3 tests/live/test_import.py --ui build/curl-ui
+          python3 tests/live/test_picker.py --ui build/curl-ui
           python3 tests/live/test_regress.py --ui build/curl-ui
       - name: Sanitizers
         run: |
@@ -144,6 +145,7 @@ jobs:
           python tests/live/test_forms.py --ui build/Release/curl-ui.exe
           python tests/live/test_store.py --ui build/Release/curl-ui.exe
           python tests/live/test_import.py --ui build/Release/curl-ui.exe
+          python tests/live/test_picker.py --ui build/Release/curl-ui.exe
           python tests/live/test_regress.py --ui build/Release/curl-ui.exe
       - name: Package
         working-directory: build
@@ -206,6 +208,7 @@ jobs:
           python3 tests/live/test_forms.py --ui "build/curl UI.app/Contents/MacOS/curl UI"
           python3 tests/live/test_store.py --ui "build/curl UI.app/Contents/MacOS/curl UI"
           python3 tests/live/test_import.py --ui "build/curl UI.app/Contents/MacOS/curl UI"
+          python3 tests/live/test_picker.py --ui "build/curl UI.app/Contents/MacOS/curl UI"
           python3 tests/live/test_regress.py --ui "build/curl UI.app/Contents/MacOS/curl UI"
       - name: Package
         run: cd build && cpack

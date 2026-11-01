@@ -30,7 +30,7 @@ int form_kv_table(app_t *a, struct nk_rect r, kv_list *l, const char *key_hint, 
   float content = (float)l->n * KV_ROW + 34;
   float x = r.x, y;
   float key_w = NK_MIN(220, r.w * 0.34f);
-  float file_w = file_col ? 52.0f : 0.0f;
+  float file_w = file_col ? 52.0f + 70.0f : 0.0f;
   float val_w = r.w - key_w - 22 - 26 - 18 - file_w;
   int i, changed = 0, remove_row = -1;
   ui_clamp_scroll(&CUR(a)->form_scroll, content, r.h);
@@ -63,7 +63,7 @@ int form_kv_table(app_t *a, struct nk_rect r, kv_list *l, const char *key_hint, 
       CUR(a)->form_focus = 1;
     if(file_col) {
       struct nk_rect fb = nk_rect(fx + val_w + 6, y + 7, 16, 16);
-      struct nk_rect ft = nk_rect(fb.x, y, file_w, 30);
+      struct nk_rect ft = nk_rect(fb.x, y, 46, 30);
       ui_rect(a, fb, 3, row->is_file ? p->accent : p->field);
       ui_stroke(a, fb, 3, row->is_file ? p->accent : p->border_strong);
       ui_text_fit(a, a->f.small, fb.x + 20, y, 30, 26, "File", p->dim);
@@ -73,6 +73,8 @@ int form_kv_table(app_t *a, struct nk_rect r, kv_list *l, const char *key_hint, 
         row->is_file = !row->is_file;
         changed = 1;
       }
+      if(ui_button(a, nk_rect(fb.x + 50, y + 1, 66, 28), "Browse", BTN_SECONDARY))
+        picker_open(a, FS_PICK_OPEN, PICK_FOR_FORM_ROW, 0, i, row->is_file ? row->value : "");
     }
     {
       int hd = ui_hover(a, del);
@@ -321,7 +323,9 @@ static void view_body(app_t *a, struct nk_rect r)
     for(c = t->body_file; c && *c; c++)
       before = (before ^ (unsigned char)*c) * 16777619u;
     ui_text_fit(a, a->f.small, area.x, area.y, 18, area.w, "Full path of the file to send, as it is", p->dim);
-    st = ui_edit_dyn(a, nk_rect(area.x, area.y + 22, area.w, 30), &t->body_file, &t->body_file_cap, "/full/path/to/file",
+    if(ui_button(a, nk_rect(area.x + area.w - 66, area.y + 22, 66, 30), "Browse", BTN_SECONDARY))
+      picker_open(a, FS_PICK_OPEN, PICK_FOR_BODY_FILE, 0, 0, t->body_file);
+    st = ui_edit_dyn(a, nk_rect(area.x, area.y + 22, area.w - 72, 30), &t->body_file, &t->body_file_cap, "/full/path/to/file",
                      a->f.mono_small, 0);
     if(st & NK_EDIT_ACTIVE)
       t->form_focus = 1;
@@ -343,6 +347,32 @@ static void view_body(app_t *a, struct nk_rect r)
       t->form_sig = form_request_sig(&t->req);
     }
   }
+}
+
+void form_pick_body_file(app_t *a, const char *path)
+{
+  tab_t *t = CUR(a);
+  char err[128];
+  set_text(&t->body_file, &t->body_file_cap, path);
+  form_body_set(&t->req, BODY_FILE, NULL, t->body_file, err, sizeof(err));
+  t->form_sig = form_request_sig(&t->req);
+}
+
+void form_pick_row(app_t *a, int row, const char *path)
+{
+  tab_t *t = CUR(a);
+  char err[128];
+  if(row < 0 || row >= t->body_rows.n)
+    return;
+  if(strpbrk(path, ",;")) {  /* a row has no quoting; a --form card does */
+    app_notice(a, "A Form data row cannot hold a path with , or ;. Add --form on Curl: its Browse takes it.");
+    return;
+  }
+  set_text(&t->body_rows.r[row].value, &t->body_rows.r[row].value_cap, path);
+  t->body_rows.r[row].is_file = 1;
+  t->body_choice = BODY_FORMDATA;
+  form_body_set(&t->req, BODY_FORMDATA, &t->body_rows, NULL, err, sizeof(err));
+  t->form_sig = form_request_sig(&t->req);
 }
 
 static int edit_row(app_t *a, float x, float y, float w, const char *label, char **buf, size_t *cap, const char *hint)

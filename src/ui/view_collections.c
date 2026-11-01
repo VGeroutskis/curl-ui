@@ -625,7 +625,7 @@ void view_dialog(app_t *a)
     title = "Import a curl command";
     ok = "Import";
     name_field = 0;
-    hint = "Paste the command. Nothing runs until you press Run.";
+    hint = "Paste the command, or open a file holding it. Nothing runs until you press Run.";
     h += 200;
     break;
   case DLG_QUIT:
@@ -677,6 +677,8 @@ void view_dialog(app_t *a)
       a->dlg_pending = 1;
     if(ui_button(a, nk_rect(x + w - 18 - okw - 8 - 72, by, 72, 28), "Cancel", BTN_SECONDARY))
       a->dlg_pending = 2;
+    if(a->dlg == DLG_IMPORT && ui_button(a, nk_rect(x + 18, by, 96, 28), "Open file", BTN_SECONDARY))
+      picker_open(a, FS_PICK_OPEN, PICK_FOR_IMPORT, 0, 0, "");
     if(a->dlg == DLG_CLOSE_TAB && ui_button(a, nk_rect(x + 18, by, 84, 28), "Discard", BTN_DANGER))
       a->dlg_pending = 3;
   }

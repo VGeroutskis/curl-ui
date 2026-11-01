@@ -12,6 +12,7 @@
 #include "curlinfo.h"
 #include "docs.h"
 #include "forms.h"
+#include "fsdir.h"
 #include "history.h"
 #include "mask.h"
 #include "options.h"
@@ -36,7 +37,7 @@ typedef struct {
 } fonts_t;
 
 typedef enum { TAB_RESPONSE, TAB_LOG } out_tab;
-typedef enum { CURSOR_ARROW, CURSOR_HAND, CURSOR_IBEAM } cursor_kind;
+typedef enum { CURSOR_ARROW, CURSOR_HAND, CURSOR_IBEAM, CURSOR_NS, CURSOR_EW, CURSOR_NWSE, CURSOR_NESW, CURSOR_COUNT } cursor_kind;
 
 typedef struct {
   unsigned line, off, len;
@@ -159,6 +160,31 @@ typedef enum {
   DLG_QUIT, DLG_IMPORT
 } dialog_kind;
 
+/* Where a path chosen in the file picker goes. */
+typedef enum { PICK_FOR_CARD, PICK_FOR_BODY_FILE, PICK_FOR_FORM_ROW, PICK_FOR_PROGRAM, PICK_FOR_CONFIG, PICK_FOR_IMPORT } pick_target;
+
+typedef struct {
+  int open;
+  fs_pick_mode mode;
+  pick_target target;
+  int opt, index;       /* the option and value, or the row */
+  char *dir;
+  char path[4096];      /* the folder as typed */
+  char name[1024];
+  char filter[128];
+  fs_listing list;
+  int selected;         /* index in list, or -1 */
+  int show_hidden;
+  int confirm;          /* saving over this file was asked about */
+  float scroll;
+  unsigned long last_click;
+  int last_row;
+  int pending;          /* 1 ok, 2 cancel */
+  char err[512];
+} picker_t;
+
+typedef enum { WIN_DO_NONE, WIN_DO_MIN, WIN_DO_MAX, WIN_DO_CLOSE } win_do;
+
 typedef enum { MODAL_NONE, MODAL_SAVE, MODAL_CANCEL, MODAL_OPEN_VARS } modal_action;
 
 typedef struct {
@@ -176,6 +202,12 @@ typedef struct {
   int pending_unfocus;  /* actions run outside the window; applied in the next */
   int big_paste;        /* the focused field was asked to take a paste too big to edit */
   int quit;
+  int own_frame;        /* we draw the title bar and its buttons */
+  int win_maximized;
+  win_do win_action;    /* asked for this frame */
+  win_do win_last;      /* for tests */
+  float drag_right;     /* the title bar drags up to here */
+  picker_t picker;
 
   /* model */
   tab_t *tabs[MAX_TABS];
@@ -256,6 +288,12 @@ typedef struct {
   char **modal_values;
   size_t *modal_caps;
   int *modal_secret;
+
+  /* the panel on the right, off Curl */
+  str_list panel_names;
+  unsigned long panel_sig;
+  const void *panel_tab;
+  float panel_scroll;
 
   /* docs */
   int doc_opt;
@@ -405,6 +443,20 @@ void tree_menu_draw(app_t *a);
 void view_sidebar(app_t *a, struct nk_rect r);
 void view_history(app_t *a, struct nk_rect r);
 unsigned long form_request_sig(const request *q);
+
+/* view_picker.c */
+void picker_open(app_t *a, fs_pick_mode mode, pick_target target, int opt, int index, const char *start);
+void picker_close(app_t *a);
+void view_picker(app_t *a);
+void picker_run_pending(app_t *a);
+
+/* view_forms.c: where a path from the picker lands */
+void form_pick_body_file(app_t *a, const char *path);
+void form_pick_row(app_t *a, int row, const char *path);
+
+/* view_context.c */
+void view_context(app_t *a, struct nk_rect r);
+void context_panel_names(app_t *a, tab_t *t);
 
 /* views */
 void view_frame(app_t *a);
