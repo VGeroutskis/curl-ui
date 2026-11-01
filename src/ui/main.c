@@ -521,6 +521,7 @@ int main(int argc, char **argv)
       if(vars_load(&a->vars, a->vars_path, err, sizeof(err)))
         app_notice(a, err);
     }
+    settings_path(settings_dir, "history.jsonl", a->hist_path, sizeof(a->hist_path));
     if(!settings_path(settings_dir, "collections/x", a->coll_dir, sizeof(a->coll_dir))) {
       char *slash = strrchr(a->coll_dir, '/');
       if(!slash)
@@ -757,6 +758,12 @@ int main(int argc, char **argv)
       coll_node *n = app_find_node(a, NEXT());
       if(n)
         app_open_node(a, n);
+    }
+    else if(!strcmp(arg, "--open-history")) {
+      /* counted from the newest */
+      int back = atoi(NEXT());
+      if(tab_new(a) >= 0)
+        app_open_history(a, a->hist.n - 1 - back);
     }
     else if(!strcmp(arg, "--sidebar")) {
       const char *v = NEXT();

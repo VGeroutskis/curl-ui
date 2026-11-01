@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define NODE_H 26.0f
 #define STRIP_H 34.0f
@@ -131,6 +132,72 @@ static void view_collections(app_t *a, struct nk_rect r)
   for(i = 0; i < a->ncolls; i++)
     draw_node(a, body, a->colls[i]->root, 0, &ty, a->coll_search, 1);
   ui_scrollbar(a, body, &a->tree_scroll, content);
+}
+
+#define HIST_ROW 44.0f
+
+void view_history(app_t *a, struct nk_rect r)
+{
+  const palette *p = &a->pal;
+  float x = r.x + 12, w = r.w - 24, y = r.y, content, ty;
+  struct nk_rect body;
+  int i;
+  if(!a->hist.n) {
+    ui_text_fit(a, a->f.small, x, y, 22, w, "Nothing has run yet.", p->dim);
+    return;
+  }
+  if(ui_button(a, nk_rect(x, y, w, 26), a->hist_clear_armed ? "Really clear history?" : "Clear history",
+               a->hist_clear_armed ? BTN_DANGER : BTN_SECONDARY)) {
+    if(a->hist_clear_armed) {
+      history_clear(&a->hist, a->hist_path);
+      a->hist_clear_armed = 0;
+      return;
+    }
+    a->hist_clear_armed = 1;
+  }
+  y += 32;
+  body = nk_rect(r.x, y, r.w, r.y + r.h - y);
+  content = (float)a->hist.n * HIST_ROW;
+  ui_clamp_scroll(&a->hist_scroll, content, body.h);
+  ui_wheel(a, body, &a->hist_scroll, content, 40);
+  ui_clamp_scroll(&a->hist_scroll, content, body.h);
+  ui_push_clip(a, body);
+  ty = y - a->hist_scroll;
+  for(i = a->hist.n - 1; i >= 0; i--) {
+    const hist_entry *e = &a->hist.e[i];
+    struct nk_rect row = nk_rect(r.x, ty, r.w, HIST_ROW);
+    if(ty + HIST_ROW >= body.y && ty <= body.y + body.h) {
+      int hover = ui_hover(a, row);
+      char line[64], stamp[32], status[16];
+      time_t when = (time_t)e->when;
+      struct tm *tm = localtime(&when);
+      float mw;
+      if(hover)
+        ui_rect(a, row, 0, p->hover);
+      mw = ui_text_w(a->f.mono_semi, e->method, (int)strlen(e->method)) + 8;
+      ui_text_fit(a, a->f.mono_semi, x, ty + 4, 18, mw, e->method, p->accent);
+      ui_text_fit(a, a->f.mono_small, x + mw, ty + 4, 18, w - mw, e->url, p->text);
+      if(tm)
+        strftime(stamp, sizeof(stamp), "%d %b %H:%M", tm);
+      else
+        stamp[0] = '\0';
+      if(e->status)
+        snprintf(status, sizeof(status), "%d", e->status);
+      else
+        snprintf(status, sizeof(status), "failed");
+      snprintf(line, sizeof(line), "%s  %.2f s  %lld B  %s", status, e->secs, e->size, stamp);
+      ui_text_fit(a, a->f.small, x, ty + 22, 18, w, line, e->status && e->status < 400 ? p->dim : p->amber);
+      if(hover) {
+        a->cursor = CURSOR_HAND;
+        if(ui_clicked(a, row)) {
+          app_open_history(a, i);
+          return;
+        }
+      }
+    }
+    ty += HIST_ROW;
+  }
+  ui_scrollbar(a, body, &a->hist_scroll, content);
 }
 
 void view_sidebar(app_t *a, struct nk_rect r)

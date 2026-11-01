@@ -62,8 +62,17 @@ def main():
                         hits.append(os.path.relpath(path, settings))
         check(hits == ["variables.json"], "the secret value is only in variables.json: %s" % hits)
 
+        hist = os.path.join(settings, "history.jsonl")
+        with open(hist, encoding="utf-8") as f:
+            rows = [json.loads(line) for line in f]
+        check(len(rows) == 2, "history: a line for each run, even a failed one")
+        check(rows[0]["url"] == "{{base}}/login" and rows[0]["method"] == "POST", "history: the request as written")
+        check("{{tok}}" in json.dumps(rows[0]["request"]), "history: {{tok}}, not its value")
+
         text = app()
         check("tabs=2" in text, "tabs come back after a restart")
+        text = app("--url", "http://other/", "--open-history", "1")
+        check("title=" in text and "/login" in text.split("copy_command=")[1].split("\n")[0], "a history row opens in a tab")
 
         # open from the tree, change it, and see it as changed
         node = login["id"]

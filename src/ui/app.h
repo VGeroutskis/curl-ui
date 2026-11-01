@@ -12,6 +12,7 @@
 #include "curlinfo.h"
 #include "docs.h"
 #include "forms.h"
+#include "history.h"
 #include "mask.h"
 #include "options.h"
 #include "outbuf.h"
@@ -97,6 +98,8 @@ typedef struct {
   char *saved_json;     /* what was last saved, to compare with */
   unsigned long dirty_sig;
   jv *extra;            /* options this build does not know, carried along */
+  jv *run_req;          /* the request as written when this run began, for history */
+  char run_method[16];
   form_kind form;
   kv_list params;       /* the query of the URL, and rows switched off */
   char *params_url;     /* the URL params was last read from or written to */
@@ -217,6 +220,12 @@ typedef struct {
   char dlg_name[256];
   int dlg_pending;      /* 1 ok, 2 cancel, 3 discard */
   int dlg_close_after;  /* a Save as that started from closing the tab */
+
+  /* history */
+  history hist;
+  char hist_path[SETTINGS_PATH_CAP];
+  float hist_scroll;
+  int hist_clear_armed;
 
   /* variables */
   var_store vars;
@@ -365,6 +374,9 @@ collection *app_new_collection(app_t *a, const char *name);
 int tab_save_to_node(app_t *a, tab_t *t, coll_node *n);
 void app_save_current(app_t *a);
 int app_save_as_path(app_t *a, const char *path);
+void app_history_begin(app_t *a, tab_t *t);
+void app_history_end(app_t *a, tab_t *t);
+void app_open_history(app_t *a, int index);
 void app_store_load(app_t *a);
 void app_session_load(app_t *a);
 void app_session_save(app_t *a);

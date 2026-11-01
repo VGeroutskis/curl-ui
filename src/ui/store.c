@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #define SESSION_MAX ((size_t)1 << 30)
 
@@ -238,12 +239,76 @@ int app_save_as_path(app_t *a, const char *path)
   return tab_save_to_node(a, CUR(a), n);
 }
 
+/* ---- history ---- */
+
+void app_history_begin(app_t *a, tab_t *t)
+{
+  jv_free(t->run_req);
+  t->run_req = tab_to_jv(t);
+  snprintf(t->run_method, sizeof(t->run_method), "%s", app_method_label(a, t, t->method));
+}
+
+void app_history_end(app_t *a, tab_t *t)
+{
+  hist_entry e;
+  size_t n;
+  const char *url = jv_str(jv_get(t->run_req, "url"));
+  if(!t->run_req)
+    return;
+  memset(&e, 0, sizeof(e));
+  e.when = (long long)time(NULL);
+  e.status = t->http_status;
+  e.secs = t->has_stats ? t->curl_time : (double)t->run_secs;
+  e.size = t->has_stats ? t->curl_size : 0;
+  n = strlen(t->run_method) + 1;
+  e.method = malloc(n);
+  if(e.method)
+    memcpy(e.method, t->run_method, n);
+  n = strlen(url ? url : "") + 1;
+  e.url = malloc(n);
+  if(e.url)
+    memcpy(e.url, url ? url : "", n);
+  e.req = t->run_req;
+  t->run_req = NULL;
+  if(!e.method || !e.url) {
+    free(e.method);
+    free(e.url);
+    jv_free(e.req);
+    return;
+  }
+  if(a->hist_path[0])
+    history_append(&a->hist, a->hist_path, &e);
+  else {
+    /* a scripted run with nowhere to keep it: nothing lasts, and nothing should */
+    free(e.method);
+    free(e.url);
+    jv_free(e.req);
+  }
+}
+
+void app_open_history(app_t *a, int index)
+{
+  tab_t *t;
+  if(index < 0 || index >= a->hist.n)
+    return;
+  if(!tab_is_blank(CUR(a)) && tab_new(a) < 0) {
+    app_notice(a, "Too many tabs are open.");
+    return;
+  }
+  t = CUR(a);
+  tab_load(t, a->hist.e[index].req);
+  a->show_vars = a->show_settings = 0;
+  a->pending_unfocus = 1;
+}
+
 /* ---- at start and at exit ---- */
 
 void app_store_load(app_t *a)
 {
   char err[4096];
   err[0] = '\0';
+  if(a->hist_path[0])
+    history_load(&a->hist, a->hist_path);
   if(!a->coll_dir[0])
     return;
   coll_load_dir(a->coll_dir, &a->colls, &a->ncolls, err, sizeof(err));
@@ -340,4 +405,5 @@ void app_store_free(app_t *a)
   a->ncolls = 0;
   free(a->dlg_targets);
   a->dlg_targets = NULL;
+  history_free(&a->hist);
 }

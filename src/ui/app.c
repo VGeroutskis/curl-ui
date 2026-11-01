@@ -85,6 +85,7 @@ static void tab_free(tab_t *t)
   form_hints_free(&t->hints);
   free(t->saved_json);
   jv_free(t->extra);
+  jv_free(t->run_req);
   kv_free(&t->header_rows);
   kv_free(&t->body_rows);
   free(t->body_file);
@@ -340,6 +341,7 @@ void app_run(app_t *a)
     }
     str_list_free(&missing);
   }
+  app_history_begin(a, CUR(a));
   mask_free(CUR(a)->mask);
   CUR(a)->mask = mask_build(&a->vars.e[a->vars.active], &CUR(a)->args_real);
 
@@ -485,7 +487,7 @@ static void make_pretty(tab_t *t)
   free(text);
 }
 
-static void poll_tab(tab_t *t)
+static void poll_tab(app_t *a, tab_t *t)
 {
   char marker[OUTBUF_MARKER_CAP];
   if(!t->proc)
@@ -503,6 +505,7 @@ static void poll_tab(tab_t *t)
       t->has_stats = 1;
   }
   make_pretty(t);
+  app_history_end(a, t);
   /* nothing on stdout and a failure: the explanation is in the log */
   if(t->exit_code && outbuf_line_count(t->out) == 0)
     t->out_tab = TAB_LOG;
@@ -512,7 +515,7 @@ void app_poll(app_t *a)
 {
   int i;
   for(i = 0; i < a->ntabs; i++)
-    poll_tab(a->tabs[i]);
+    poll_tab(a, a->tabs[i]);
 }
 
 void app_push(app_t *a, act_kind kind, int x, int y)

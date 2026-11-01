@@ -455,8 +455,3 @@ void view_form(app_t *a, struct nk_rect r)
     break;
   }
 }
-
-void view_history(app_t *a, struct nk_rect r)
-{
-  ui_text_fit(a, a->f.small, r.x + 12, r.y, 22, r.w - 24, "History", a->pal.dim);
-}
