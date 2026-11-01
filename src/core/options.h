@@ -46,4 +46,14 @@ int options_in_category(const opt_def *o, const char *category);
    matches first, then description matches. Case-insensitive. Returns count. */
 int options_search(const char *query, const char *filter, int *out);
 
+/* Whether two options make sense together: not declared or found to conflict. */
+int options_conflict(int a, int b);
+/* The application protocols an option applies to, as a bit mask. 0 means any: it
+   has none listed, or a cross-cutting one such as TLS or DNS. */
+unsigned options_proto_mask(int opt);
+/* Can opt join these already selected options? A single transfer speaks one
+   protocol, so all of them must share one. Returns 1 if so, else 0 with *blocker
+   set to the selected option that rules it out. selected may include opt. */
+int options_can_combine(int opt, const int *selected, int n, int *blocker);
+
 #endif

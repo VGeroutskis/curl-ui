@@ -261,6 +261,120 @@ static void check_curl(const char *curl)
   curlinfo_free(&ci);
 }
 
+/* Choosing as a person would from the filtered list: each option picked only from
+   what still combines with those before it. curl must accept every such chain. */
+static void check_chains(const char *curl)
+{
+  unsigned seed = 12345;
+  int chain, accepted = 0, skipped = 0;
+  FILE *f = fopen(FIXTURE, "wb");
+  if(f)
+    fclose(f);
+  for(chain = 0; chain < 300; chain++) {
+    int sel[6], nsel = 0, tries;
+    const char *argv[16];
+    char flags[6][160];
+    int n = 0, i, code;
+    argv[n++] = curl;
+    for(tries = 0; tries < 400 && nsel < 6; tries++) {
+      int opt;
+      const opt_def *o;
+      seed = seed * 1103515245u + 12345u;
+      opt = (int)((seed >> 8) % (unsigned)g_option_count);
+      o = &g_options[opt];
+      if(exits_by_itself(o) || !strcmp(o->name, "next") || !strcmp(o->name, "stderr") || !strcmp(o->name, "config") ||
+         !strcmp(o->name, "tls-max") || o->deprecated || !options_can_combine(opt, sel, nsel, NULL))
+        continue;
+      for(i = 0; i < nsel; i++)
+        if(sel[i] == opt)
+          break;
+      if(i < nsel)
+        continue;
+      sel[nsel] = opt;
+      snprintf(flags[nsel], sizeof(flags[nsel]), "--%s", o->name);
+      argv[n++] = flags[nsel];
+      if(o->arg[0])
+        argv[n++] = good_value(o);
+      nsel++;
+    }
+    argv[n++] = "--version";
+    argv[n] = NULL;
+    code = run(argv);
+    g_checks++;
+    if(!code)
+      accepted++;
+    else if(feature_missing(g_cap.err) || strstr(g_cap.err, "is unknown"))
+      skipped++;
+    else {
+      char detail[700];
+      size_t used = 0;
+      for(i = 1; i < n - 1; i++)
+        used += (size_t)snprintf(detail + used, sizeof(detail) - used > 200 ? 200 : sizeof(detail) - used, "%s ", argv[i]);
+      snprintf(detail + used, sizeof(detail) - used, "=> %.200s", g_cap.err);
+      fail("chain", "combined", detail);
+    }
+  }
+  remove(FIXTURE);
+  remove(SCRATCH);
+  printf("chains: %d accepted, %d hit a feature this curl lacks\n", accepted, skipped);
+}
+
+/* Every pair in both orders: what does curl itself refuse to combine? Slow, and
+   it writes files where a pair says so, so on request and in a scratch directory:
+   test_args <echoargs> <curl> --pairs. Prints "a b: message". */
+static int runs_alone(const opt_def *o)
+{
+  return exits_by_itself(o) || !strcmp(o->name, "next") || !strcmp(o->name, "config") ||
+         !strcmp(o->name, "stderr") || !strcmp(o->name, "disable") || !strcmp(o->name, "url");
+}
+
+static void scan_pairs(const char *curl)
+{
+  int i, j;
+  long tried = 0, refused = 0;
+  FILE *f = fopen(FIXTURE, "wb");
+  if(f)
+    fclose(f);
+  for(i = 0; i < g_option_count; i++) {
+    const opt_def *a = &g_options[i];
+    char fa[160];
+    if(runs_alone(a))
+      continue;
+    snprintf(fa, sizeof(fa), "--%s", a->name);
+    for(j = 0; j < g_option_count; j++) {
+      const opt_def *b = &g_options[j];
+      char fb[160];
+      const char *argv[8];
+      int n = 0, code;
+      if(i == j || runs_alone(b))
+        continue;
+      snprintf(fb, sizeof(fb), "--%s", b->name);
+      argv[n++] = curl;
+      argv[n++] = fa;
+      if(a->arg[0])
+        argv[n++] = good_value(a);
+      argv[n++] = fb;
+      if(b->arg[0])
+        argv[n++] = good_value(b);
+      /* a local URL gets past the checks made after parsing, with no network */
+      argv[n++] = "file:///dev/null";
+      argv[n] = NULL;
+      code = run(argv);
+      tried++;
+      if(code == 2 && !feature_missing(g_cap.err) && !strstr(g_cap.err, "is unknown")) {
+        char *nl = strchr(g_cap.err, '\n');
+        if(nl)
+          *nl = 0;
+        printf("%s %s: %d %s\n", a->name, b->name, code, g_cap.err);
+        fflush(stdout);
+        refused++;
+      }
+    }
+  }
+  remove(FIXTURE);
+  printf("%ld pairs, %ld refused\n", tried, refused);
+}
+
 int main(int argc, char **argv)
 {
   const char *echoargs = argc > 1 ? argv[1] : NULL;
@@ -274,9 +388,15 @@ int main(int argc, char **argv)
     return 2;
   }
   os_mutex_init(&g_cap.lock);
+  if(curl && argc > 3 && !strcmp(argv[3], "--pairs")) {
+    scan_pairs(curl);
+    return 0;
+  }
   check_argv(echoargs);
-  if(curl)
+  if(curl) {
     check_curl(curl);
+    check_chains(curl);
+  }
   os_mutex_destroy(&g_cap.lock);
   printf("%d checks, %d failed\n", g_checks, g_fail);
   return g_fail ? 1 : 0;

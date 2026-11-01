@@ -41,6 +41,21 @@ static int conflict_text(const app_t *a, int opt, char *out, size_t n)
   return count;
 }
 
+/* Another chosen option that speaks a different protocol than this one. */
+static int proto_clash(const app_t *a, int opt)
+{
+  int i;
+  unsigned mine = options_proto_mask(opt);
+  if(!mine)
+    return -1;
+  for(i = 0; i < a->req.nsel; i++) {
+    unsigned other = options_proto_mask(a->req.sel[i].opt);
+    if(a->req.sel[i].opt != opt && other && !(other & mine))
+      return a->req.sel[i].opt;
+  }
+  return -1;
+}
+
 /* A value that looks like a URL while the URL bar is empty is almost certainly
    in the wrong place. --url itself is the right place. */
 static int url_value_slot(const app_t *a, const sel_option *s)
@@ -66,6 +81,8 @@ static float card_height(const app_t *a, const sel_option *s)
     h += 4;
   }
   if(conflict_text(a, s->opt, tmp, sizeof(tmp)))
+    h += 28;
+  if(proto_clash(a, s->opt) >= 0)
     h += 28;
   if(!app_option_supported(a, s->opt))
     h += 28;
@@ -158,6 +175,13 @@ static void draw_card(app_t *a, struct nk_rect r, sel_option *s)
     memcpy(tmp, "Conflicts with ", 15);
     memmove(tmp + 15, tmp + 32, strlen(tmp + 32) + 1);
     warn_bar(a, x, &y, w, tmp);
+  }
+  {
+    int other = proto_clash(a, s->opt);
+    if(other >= 0) {
+      snprintf(tmp, sizeof(tmp), "Used by other protocols than --%s: one of them will do nothing", g_options[other].name);
+      warn_bar(a, x, &y, w, tmp);
+    }
   }
   if(!app_option_supported(a, s->opt)) {
     snprintf(tmp, sizeof(tmp), "Your curl %s does not know this option; it needs %s or newer",

@@ -110,6 +110,10 @@ typedef struct {
   int nresults;
   float lib_scroll;
   int results_valid;
+  int show_all;         /* also list what cannot combine with the selection */
+  int nhidden;
+  unsigned long sel_key;
+  int sel_scratch[512];
 
   /* centre */
   int show_recipes;

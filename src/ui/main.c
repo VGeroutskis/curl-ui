@@ -316,6 +316,7 @@ static int write_dump(app_t *a, const char *path)
   if(f) {
     fprintf(f, "exit=%d\nhad_result=%d\nhttp=%d\nstats=%d\nsize=%lld\nurl_missing=%d\n", a->exit_code, a->has_result,
             a->http_status, a->has_stats, a->curl_size, a->url_missing);
+    fprintf(f, "listed=%d\nhidden=%d\n", a->nresults, a->nhidden);
     fprintf(f, "command=%s\n---stdout---\n%s\n---log---\n%s\n", cmd ? cmd : "", out ? out : "", log ? log : "");
     fclose(f);
   }

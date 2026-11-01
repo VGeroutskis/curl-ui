@@ -84,6 +84,82 @@ static int matches_filter(const opt_def *o, const char *filter, int searching)
   return options_in_category(o, filter);
 }
 
+int options_conflict(int a, int b)
+{
+  const char *const *m;
+  if(a == b)
+    return 0;
+  for(m = g_options[a].mutexes; m && *m; m++)
+    if(!strcmp(*m, g_options[b].name))
+      return 1;
+  for(m = g_options[b].mutexes; m && *m; m++)
+    if(!strcmp(*m, g_options[a].name))
+      return 1;
+  return 0;
+}
+
+unsigned options_proto_mask(int opt)
+{
+  static const struct { const char *name; unsigned bit; } protos[] = {
+    /* a secure variant is the same application protocol here */
+    { "HTTP", 1u << 0 }, { "HTTPS", 1u << 0 }, { "IPFS", 1u << 0 },
+    { "FTP", 1u << 1 }, { "FTPS", 1u << 1 }, { "SFTP", 1u << 2 }, { "SCP", 1u << 3 },
+    { "SMTP", 1u << 4 }, { "IMAP", 1u << 5 }, { "POP3", 1u << 6 }, { "LDAP", 1u << 7 },
+    { "FILE", 1u << 8 }, { "TFTP", 1u << 9 }, { "MQTT", 1u << 10 }, { "TELNET", 1u << 11 },
+    { NULL, 0 }
+  };
+  const char *p = g_options[opt].protocols;
+  unsigned mask = 0;
+  while(*p) {
+    size_t n = strcspn(p, " ");
+    int i, known = 0;
+    for(i = 0; protos[i].name; i++)
+      if(strlen(protos[i].name) == n && !strncmp(protos[i].name, p, n)) {
+        mask |= protos[i].bit;
+        known = 1;
+      }
+    /* TLS, DNS and the like work under any protocol */
+    if(!known)
+      return 0;
+    p += n;
+    while(*p == ' ')
+      p++;
+  }
+  return mask;
+}
+
+int options_can_combine(int opt, const int *selected, int n, int *blocker)
+{
+  unsigned shared = options_proto_mask(opt);
+  int i;
+  for(i = 0; i < n; i++) {
+    if(selected[i] == opt)
+      continue;
+    if(options_conflict(opt, selected[i])) {
+      if(blocker)
+        *blocker = selected[i];
+      return 0;
+    }
+  }
+  for(i = 0; i < n; i++) {
+    unsigned m;
+    if(selected[i] == opt)
+      continue;
+    m = options_proto_mask(selected[i]);
+    if(!m)
+      continue;
+    if(shared && !(shared & m)) {
+      if(blocker)
+        *blocker = selected[i];
+      return 0;
+    }
+    if(!shared)
+      continue;
+    shared &= m;
+  }
+  return 1;
+}
+
 int options_search(const char *query, const char *filter, int *out)
 {
   int i, count = 0, pass;

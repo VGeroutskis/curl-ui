@@ -247,6 +247,59 @@ static void test_url_checks(void)
   CHECK(!value_looks_like_url("X-Header: http://a"));
 }
 
+static void test_combining(void)
+{
+#define OPT(n) options_find(n)
+  int sel[4], blocker = -1, i, j;
+  /* declared conflicts, in both directions */
+  CHECK(options_conflict(OPT("http2"), OPT("http1.1")));
+  CHECK(options_conflict(OPT("http1.1"), OPT("http2")));
+  CHECK(options_conflict(OPT("data"), OPT("form")));
+  CHECK(!options_conflict(OPT("data"), OPT("header")));
+  CHECK(!options_conflict(OPT("data"), OPT("data")));
+  /* found by asking curl, the docs do not declare these */
+  CHECK(options_conflict(OPT("continue-at"), OPT("range")));
+  CHECK(options_conflict(OPT("json"), OPT("upload-file")));
+  CHECK(options_conflict(OPT("data-raw"), OPT("head")));
+  for(i = 0; i < g_option_count; i++)
+    for(j = 0; j < g_option_count; j++)
+      if(options_conflict(i, j) != options_conflict(j, i))
+        CHECK(!"conflict is not symmetric");
+
+  CHECK(options_proto_mask(OPT("user-agent")) != 0);
+  CHECK(options_proto_mask(OPT("cacert")) == 0);       /* TLS: anything */
+  CHECK(options_proto_mask(OPT("verbose")) == 0);      /* none listed */
+  CHECK(options_proto_mask(OPT("user-agent")) == options_proto_mask(OPT("referer")));
+
+  /* nothing chosen: everything goes */
+  for(i = 0; i < g_option_count; i++)
+    CHECK(options_can_combine(i, NULL, 0, NULL));
+
+  /* first choice narrows, second narrows further */
+  sel[0] = OPT("http2");
+  CHECK(!options_can_combine(OPT("http1.1"), sel, 1, &blocker));
+  CHECK(blocker == OPT("http2"));
+  CHECK(options_can_combine(OPT("user-agent"), sel, 1, NULL));
+  CHECK(options_can_combine(OPT("cacert"), sel, 1, NULL));
+  CHECK(!options_can_combine(OPT("ftp-pasv"), sel, 1, NULL));
+  CHECK(options_can_combine(OPT("http2"), sel, 1, NULL));  /* itself */
+
+  /* --head is HTTP, FTP or FILE; with --ftp-pasv only FTP is left */
+  sel[0] = OPT("head");
+  CHECK(options_can_combine(OPT("ftp-pasv"), sel, 1, NULL));
+  CHECK(options_can_combine(OPT("user-agent"), sel, 1, NULL));
+  sel[1] = OPT("ftp-pasv");
+  CHECK(!options_can_combine(OPT("user-agent"), sel, 2, &blocker));
+  CHECK(blocker == OPT("ftp-pasv"));
+  CHECK(options_can_combine(OPT("verbose"), sel, 2, NULL));
+  CHECK(options_can_combine(OPT("insecure"), sel, 2, NULL));
+  /* a wide option chosen later does not widen what is left */
+  sel[0] = OPT("ftp-pasv");
+  sel[1] = OPT("head");
+  CHECK(!options_can_combine(OPT("user-agent"), sel, 2, NULL));
+#undef OPT
+}
+
 static void test_win_quoting_rules(void)
 {
   const char *a1[] = { "p", "plain", "with space", "", "q\"uote", "tail\\", "sp \\", "a\\\\\"b", NULL };
@@ -930,6 +983,7 @@ int main(int argc, char **argv)
   test_options();
   test_builder();
   test_url_checks();
+  test_combining();
   test_win_quoting_rules();
   test_outbuf();
   test_outbuf_threads();

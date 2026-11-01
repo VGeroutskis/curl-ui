@@ -27,6 +27,10 @@ it is not on `PATH`, click the version pill in the header and enter its path.
 
 - **Library, left:** search names and descriptions, or filter with the chips.
   Click a row to add that option.
+  Once an option is chosen, the list shows only what can still combine with
+  everything chosen so far: what conflicts, and what belongs to another protocol
+  (`--ftp-pasv` rules out `--user-agent`), steps aside, with a count and a Show all
+  link to see it anyway. Removing an option brings back what it ruled out.
 - **Centre:** method and URL on top, a card per added option, the exact command
   below (Copy gives the same text), and the output with Response and Log tabs.
   Press Enter in the URL, or Run. Recipes are starting points.

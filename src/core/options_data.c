@@ -167,6 +167,13 @@ static const char *const ex_17[] = {
   "curl --connect-to example.com:443:example.net:8443 https://example.com",
   NULL
 };
+static const char *const mx_18[] = {
+  "no-clobber",
+  "range",
+  "remote-header-name",
+  "remove-on-error",
+  NULL
+};
 static const char *const see_18[] = {
   "range",
   NULL
@@ -244,6 +251,7 @@ static const char *const mx_26[] = {
   "form",
   "head",
   "upload-file",
+  "form-string",
   NULL
 };
 static const char *const see_26[] = {
@@ -259,6 +267,13 @@ static const char *const ex_26[] = {
   "curl -d @filename https://example.com",
   NULL
 };
+static const char *const mx_27[] = {
+  "form",
+  "form-string",
+  "head",
+  "upload-file",
+  NULL
+};
 static const char *const see_27[] = {
   "data-binary",
   "data-raw",
@@ -269,12 +284,26 @@ static const char *const ex_27[] = {
   "curl --data-ascii @file https://example.com",
   NULL
 };
+static const char *const mx_28[] = {
+  "form",
+  "form-string",
+  "head",
+  "upload-file",
+  NULL
+};
 static const char *const see_28[] = {
   "data-ascii",
   NULL
 };
 static const char *const ex_28[] = {
   "curl --data-binary @filename https://example.com",
+  NULL
+};
+static const char *const mx_29[] = {
+  "form",
+  "form-string",
+  "head",
+  "upload-file",
   NULL
 };
 static const char *const see_29[] = {
@@ -284,6 +313,13 @@ static const char *const see_29[] = {
 static const char *const ex_29[] = {
   "curl --data-raw \"hello\" https://example.com",
   "curl --data-raw \"@at@at@\" https://example.com",
+  NULL
+};
+static const char *const mx_30[] = {
+  "form",
+  "form-string",
+  "head",
+  "upload-file",
   NULL
 };
 static const char *const see_30[] = {
@@ -545,6 +581,11 @@ static const char *const mx_57[] = {
   "data",
   "head",
   "upload-file",
+  "data-ascii",
+  "data-binary",
+  "data-raw",
+  "data-urlencode",
+  "json",
   NULL
 };
 static const char *const see_57[] = {
@@ -563,6 +604,17 @@ static const char *const see_58[] = {
 };
 static const char *const ex_58[] = {
   "curl --form-escape -F 'field\\name=curl' -F 'file=@load\"this' https://example.com",
+  NULL
+};
+static const char *const mx_59[] = {
+  "data",
+  "data-ascii",
+  "data-binary",
+  "data-raw",
+  "data-urlencode",
+  "head",
+  "json",
+  "upload-file",
   NULL
 };
 static const char *const see_59[] = {
@@ -716,6 +768,18 @@ static const char *const see_75[] = {
 };
 static const char *const ex_75[] = {
   "curl --haproxy-protocol https://example.com",
+  NULL
+};
+static const char *const mx_76[] = {
+  "data",
+  "data-ascii",
+  "data-binary",
+  "data-raw",
+  "data-urlencode",
+  "form",
+  "form-string",
+  "json",
+  "upload-file",
   NULL
 };
 static const char *const see_76[] = {
@@ -1002,6 +1066,7 @@ static const char *const mx_100[] = {
   "form",
   "head",
   "upload-file",
+  "form-string",
   NULL
 };
 static const char *const see_100[] = {
@@ -1314,6 +1379,10 @@ static const char *const see_131[] = {
 };
 static const char *const ex_131[] = {
   "curl --no-buffer https://example.com",
+  NULL
+};
+static const char *const mx_132[] = {
+  "continue-at",
   NULL
 };
 static const char *const see_132[] = {
@@ -1907,6 +1976,10 @@ static const char *const ex_193[] = {
   "curl --random-file rubbish https://example.com",
   NULL
 };
+static const char *const mx_194[] = {
+  "continue-at",
+  NULL
+};
 static const char *const see_194[] = {
   "continue-at",
   "append",
@@ -1946,6 +2019,10 @@ static const char *const ex_197[] = {
   "curl --referer \";auto\" -L https://example.com",
   NULL
 };
+static const char *const mx_198[] = {
+  "continue-at",
+  NULL
+};
 static const char *const see_198[] = {
   "remote-name",
   NULL
@@ -1980,6 +2057,10 @@ static const char *const see_201[] = {
 };
 static const char *const ex_201[] = {
   "curl --remote-time -o foo https://example.com",
+  NULL
+};
+static const char *const mx_202[] = {
+  "continue-at",
   NULL
 };
 static const char *const see_202[] = {
@@ -2602,6 +2683,18 @@ static const char *const ex_264[] = {
   "curl --unix-socket socket-path https://example.com",
   NULL
 };
+static const char *const mx_265[] = {
+  "data",
+  "data-ascii",
+  "data-binary",
+  "data-raw",
+  "data-urlencode",
+  "form",
+  "form-string",
+  "head",
+  "json",
+  NULL
+};
 static const char *const see_265[] = {
   "get",
   "head",
@@ -3098,7 +3191,7 @@ const opt_def g_options[] = {
 { "continue-at", "C", "<offset>", "Resumed transfer offset",
   "connection", "", "4.8",
   OPT_KIND_SINGLE, "", 0, 0,
-  NULL, see_18, ex_18, "e.g. -",
+  mx_18, see_18, ex_18, "e.g. -",
   "Resume a previous transfer from the given byte offset. The given offset is the\n"
     "exact number of bytes that are skipped, counting from the beginning of the\n"
     "source file before it is transferred to the destination. If used with uploads,\n"
@@ -3278,13 +3371,13 @@ const opt_def g_options[] = {
 { "data-ascii", "", "<data>", "HTTP POST ASCII data",
   "http post upload", "HTTP", "7.2",
   OPT_KIND_APPEND, "", 1, 0,
-  NULL, see_27, ex_27, "e.g. @file",
+  mx_27, see_27, ex_27, "e.g. @file",
   "This option is an alias for --data."
 },
 { "data-binary", "", "<data>", "HTTP POST binary data",
   "http post upload", "HTTP", "7.2",
   OPT_KIND_APPEND, "", 1, 0,
-  NULL, see_28, ex_28, "e.g. @filename",
+  mx_28, see_28, ex_28, "e.g. @filename",
   "Post data exactly as specified with no extra processing whatsoever.\n"
     "\n"
     "If you start the data with the letter @, the rest should be a filename.\n"
@@ -3303,14 +3396,14 @@ const opt_def g_options[] = {
 { "data-raw", "", "<data>", "HTTP POST data, '@' allowed",
   "http post upload", "HTTP", "7.43.0",
   OPT_KIND_APPEND, "", 1, 0,
-  NULL, see_29, ex_29, "e.g. hello",
+  mx_29, see_29, ex_29, "e.g. hello",
   "Post data similarly to --data but without the special interpretation of the @\n"
     "character."
 },
 { "data-urlencode", "", "<data>", "HTTP POST data URL encoded",
   "http post upload", "HTTP", "7.18.0",
   OPT_KIND_APPEND, "", 1, 0,
-  NULL, see_30, ex_30, "e.g. name=val",
+  mx_30, see_30, ex_30, "e.g. name=val",
   "Post data, similar to the other --data options with the exception that this\n"
     "performs URL-encoding.\n"
     "\n"
@@ -3846,7 +3939,7 @@ const opt_def g_options[] = {
 { "form-string", "", "<name=string>", "Specify multipart MIME data",
   "http upload post smtp imap", "HTTP SMTP IMAP", "7.13.2",
   OPT_KIND_APPEND, "", 1, 0,
-  NULL, see_59, ex_59, "e.g. name=data",
+  mx_59, see_59, ex_59, "e.g. name=data",
   "Similar to --form except that the value string for the named parameter is used\n"
     "literally. Leading @ and \\< characters, and the `;type=` string in the value\n"
     "have no special meaning. Use this in preference to --form if there is any\n"
@@ -4069,7 +4162,7 @@ const opt_def g_options[] = {
 { "head", "I", "", "Show document info only",
   "important http ftp file", "HTTP FTP FILE", "4.0",
   OPT_KIND_BOOLEAN, "no-head", 0, 0,
-  NULL, see_76, ex_76, "",
+  mx_76, see_76, ex_76, "",
   "Fetch the headers only. HTTP-servers feature the command HEAD which this uses\n"
     "to get nothing but the header of a document. When used on an FTP or FILE URL,\n"
     "curl displays the file size and last modification time only."
@@ -4982,7 +5075,7 @@ const opt_def g_options[] = {
 { "no-clobber", "", "", "Do not overwrite files that already exist",
   "output", "", "7.83.0",
   OPT_KIND_BOOLEAN, "clobber", 0, 0,
-  NULL, see_132, ex_132, "e.g. --output",
+  mx_132, see_132, ex_132, "e.g. --output",
   "When used in conjunction with the --output, --remote-header-name,\n"
     "--remote-name, or --remote-name-all options, curl avoids overwriting files\n"
     "that already exist. Instead, a dot and a number gets appended to the name of\n"
@@ -5946,7 +6039,7 @@ const opt_def g_options[] = {
 { "range", "r", "<range>", "Retrieve only the bytes within RANGE",
   "http ftp sftp file", "HTTP FTP SFTP FILE", "4.0",
   OPT_KIND_SINGLE, "", 0, 0,
-  NULL, see_194, ex_194, "e.g. 22-44",
+  mx_194, see_194, ex_194, "e.g. 22-44",
   "Retrieve a byte range (i.e. a partial document) from an HTTP/1.1, FTP or SFTP\n"
     "server or a local FILE. Ranges can be specified in a number of ways.\n"
     "\n"
@@ -6044,7 +6137,7 @@ const opt_def g_options[] = {
 { "remote-header-name", "J", "", "Use the header-provided filename",
   "output http", "HTTP", "7.20.0",
   OPT_KIND_BOOLEAN, "no-remote-header-name", 0, 0,
-  NULL, see_198, ex_198, "",
+  mx_198, see_198, ex_198, "",
   "Tell the --remote-name option to use the server-specified Content-Disposition\n"
     "filename instead of extracting a filename from the URL. If the server-provided\n"
     "filename contains a path, that is stripped off before the filename is used.\n"
@@ -6117,7 +6210,7 @@ const opt_def g_options[] = {
 { "remove-on-error", "", "", "Remove output file on errors",
   "output", "", "7.83.0",
   OPT_KIND_BOOLEAN, "no-remove-on-error", 0, 0,
-  NULL, see_202, ex_202, "e.g. -o",
+  mx_202, see_202, ex_202, "e.g. -o",
   "Remove the output file if an error occurs. If curl returns an error when told to\n"
     "save output in a local file. This prevents curl from leaving a partial file in\n"
     "the case of an error during transfer.\n"
@@ -7037,7 +7130,7 @@ const opt_def g_options[] = {
 { "upload-file", "T", "<file>", "Transfer local FILE to destination",
   "important upload imap", "", "4.0",
   OPT_KIND_PER_URL, "", 1, 0,
-  NULL, see_265, ex_265, "e.g. file",
+  mx_265, see_265, ex_265, "e.g. file",
   "Upload the specified local file to the remote URL.\n"
     "\n"
     "If there is no file part in the specified URL, curl appends the local file\n"

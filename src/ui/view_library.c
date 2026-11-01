@@ -63,13 +63,23 @@ static void protocol_label(const opt_def *o, char *out, size_t n)
     snprintf(out, n, "%s", o->protocols);
 }
 
-static void draw_row(app_t *a, struct nk_rect r, int opt)
+static int selected_list(const app_t *a, int *out)
+{
+  int i;
+  for(i = 0; i < a->req.nsel; i++)
+    out[i] = a->req.sel[i].opt;
+  return a->req.nsel;
+}
+
+static void draw_row(app_t *a, struct nk_rect r, int opt, const int *sel, int nsel)
 {
   const palette *p = &a->pal;
   const opt_def *o = &g_options[opt];
   int added = request_find(&a->req, opt) >= 0;
   int hover = ui_hover(a, r);
-  char flag[128], proto[64];
+  char flag[128], proto[64], why[128];
+  int blocker = -1;
+  int blocked = !added && !options_can_combine(opt, sel, nsel, &blocker);
   float x = r.x + 14, right = r.x + r.w - 16, fw, y1 = r.y + 7;
   float pillw = 0;
 
@@ -99,10 +109,15 @@ static void draw_row(app_t *a, struct nk_rect r, int opt)
   else
     snprintf(flag, sizeof(flag), "--%s", o->name);
   fw = ui_text_w(a->f.mono, flag, (int)strlen(flag));
-  ui_text_fit(a, a->f.mono, x, y1, 18, right - pillw - 8 - x, flag, o->deprecated ? p->faint : p->accent);
+  ui_text_fit(a, a->f.mono, x, y1, 18, right - pillw - 8 - x, flag, (o->deprecated || blocked) ? p->faint : p->accent);
   if(o->arg[0] && x + fw + 8 < right - pillw - 8)
     ui_text_fit(a, a->f.mono_small, x + fw + 6, y1, 18, right - pillw - 8 - (x + fw + 6), o->arg, p->faint);
-  ui_text_fit(a, a->f.small, x, y1 + 19, 16, r.w - 30, o->help, p->dim);
+  if(blocked) {
+    snprintf(why, sizeof(why), "Does not combine with --%s", g_options[blocker].name);
+    ui_text_fit(a, a->f.small, x, y1 + 19, 16, r.w - 30, why, p->amber);
+  }
+  else
+    ui_text_fit(a, a->f.small, x, y1 + 19, 16, r.w - 30, o->help, p->dim);
 
   if(hover) {
     a->cursor = CURSOR_HAND;
@@ -118,6 +133,9 @@ void view_library(app_t *a, struct nk_rect r)
   float x = r.x + 12, y = r.y + 12, w = r.w - 24, cx;
   int i, shown;
   char count[64];
+  int *sel = a->sel_scratch;
+  int nsel;
+  unsigned long key;
   struct nk_rect list;
   float content;
   int first, last;
@@ -152,15 +170,54 @@ void view_library(app_t *a, struct nk_rect r)
   }
   y += 30;
 
-  if(!a->results_valid || a->filter != a->filter_last || strcmp(a->search, a->search_last)) {
+  /* the list follows the selection: only what can still join it */
+  nsel = selected_list(a, sel);
+  key = (unsigned long)nsel * 2654435761u + (unsigned long)a->show_all;
+  for(i = 0; i < nsel; i++)
+    key = key * 31u + (unsigned long)sel[i];
+  if(!a->results_valid || a->filter != a->filter_last || strcmp(a->search, a->search_last) || key != a->sel_key) {
+    int same_list = a->results_valid && a->filter == a->filter_last && !strcmp(a->search, a->search_last);
+    int kept = 0;
     a->nresults = options_search(a->search, chips[a->filter].filter, a->results);
+    a->nhidden = 0;
+    for(i = 0; i < a->nresults; i++) {
+      int opt = a->results[i];
+      if(a->show_all || request_find(&a->req, opt) >= 0 || options_can_combine(opt, sel, nsel, NULL))
+        a->results[kept++] = opt;
+      else
+        a->nhidden++;
+    }
+    a->nresults = kept;
+    a->sel_key = key;
+    /* adding an option must not throw the reader back to the top */
+    if(!same_list)
+      a->lib_scroll = 0;
     a->filter_last = a->filter;
     snprintf(a->search_last, sizeof(a->search_last), "%s", a->search);
     a->results_valid = 1;
-    a->lib_scroll = 0;
   }
   snprintf(count, sizeof(count), "%d of %d options", a->nresults, g_option_count);
   ui_text_fit(a, a->f.small, x, y, 16, w, count, p->faint);
+  if(a->nhidden || a->show_all) {
+    char label[64];
+    float lw, lx;
+    struct nk_rect link;
+    int hl;
+    if(a->show_all)
+      snprintf(label, sizeof(label), "Only what combines");
+    else
+      snprintf(label, sizeof(label), "%d don't combine. Show all", a->nhidden);
+    lw = ui_text_w(a->f.small, label, (int)strlen(label));
+    lx = x + w - lw;
+    link = nk_rect(lx, y, lw, 16);
+    hl = ui_hover(a, link);
+    ui_text(a, a->f.small, lx, y + (16 - a->f.small->height) / 2, label, (int)strlen(label),
+            hl ? p->accent_hover : p->accent);
+    if(hl)
+      a->cursor = CURSOR_HAND;
+    if(ui_clicked(a, link))
+      a->show_all = !a->show_all;
+  }
   y += 20;
   nk_stroke_line(nk_window_get_canvas(a->ctx), r.x, y - 0.5f, r.x + r.w - 1, y - 0.5f, 1.0f, p->border);
 
@@ -175,10 +232,12 @@ void view_library(app_t *a, struct nk_rect r)
   if(last >= a->nresults)
     last = a->nresults - 1;
   for(i = first; i <= last; i++)
-    draw_row(a, nk_rect(list.x, list.y + (float)i * ROW_H - a->lib_scroll, list.w, ROW_H), a->results[i]);
+    draw_row(a, nk_rect(list.x, list.y + (float)i * ROW_H - a->lib_scroll, list.w, ROW_H), a->results[i], sel, nsel);
   if(!a->nresults) {
-    ui_text_fit(a, a->f.sans, x, list.y + 16, 18, w, "No option matches this search.", p->dim);
-    ui_text_fit(a, a->f.small, x, list.y + 36, 16, w, "Try fewer words, or the All chip.", p->faint);
+    ui_text_fit(a, a->f.sans, x, list.y + 16, 18, w,
+                a->nhidden ? "Nothing here combines with your options." : "No option matches this search.", p->dim);
+    ui_text_fit(a, a->f.small, x, list.y + 36, 16, w,
+                a->nhidden ? "Press Show all above, or remove an option." : "Try fewer words, or the All chip.", p->faint);
   }
   ui_scrollbar(a, list, &a->lib_scroll, content);
 }
