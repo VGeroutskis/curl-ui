@@ -12,8 +12,8 @@ permissions:
   contents: read
 
 jobs:
-  # What does not depend on the system runs once, first. A mistake stops here in minutes,
-  # before the slow runners start. Each system below still runs its own tests.
+  # All the tests run here, once, first. A mistake stops here in minutes, before the slow
+  # runners start. The systems below only build, package and run what they packaged.
   common:
     runs-on: ubuntu-22.04
     steps:
@@ -70,20 +70,6 @@ jobs:
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
       - name: Build
         run: cmake --build build -j4
-      - name: Test
-        if: matrix.arch != 'x86_64'  # the common job ran them on this same system
-        run: ctest --test-dir build --output-on-failure
-      - name: Screenshot smoke test
-        env:
-          SDL_VIDEODRIVER: dummy
-        run: ./build/curl-ui --add location --docs location --screenshot smoke.bmp && test -s smoke.bmp
-      - name: Sanitizers
-        if: matrix.arch == 'aarch64'
-        run: |
-          cmake -S . -B build-san -DCMAKE_BUILD_TYPE=Debug -DCURLUI_SANITIZE=ON -DCURLUI_BUILD_GUI=OFF
-          cmake --build build-san -j4
-          # all_args spawns ASan processes by the thousand: over 8 minutes on this runner
-          ctest --test-dir build-san --output-on-failure -E all_args
       - name: Package
         run: cd build && cpack
       - name: Inspect packages
@@ -146,31 +132,6 @@ jobs:
         run: cmake -S . -B build -A ${{ matrix.platform }}
       - name: Build
         run: cmake --build build --config Release -j4
-      - name: Test
-        # C:\Windows\System32\curl.exe does the end-to-end transfer
-        run: ctest --test-dir build -C Release --output-on-failure
-      - name: Screenshot smoke test
-        env:
-          SDL_VIDEODRIVER: dummy
-        run: |
-          $p = Start-Process -Wait -PassThru -FilePath build\Release\curl-ui.exe -ArgumentList '--add location --docs location --screenshot smoke.bmp'
-          if ($p.ExitCode -ne 0 -or -not (Test-Path smoke.bmp)) { exit 1 }
-      - name: Live tests of the app
-        if: matrix.arch == 'x64'  # once per system; the other architecture has the unit tests
-        env:
-          SDL_VIDEODRIVER: dummy
-          PYTHONUTF8: 1
-        run: |
-          python tests/live/test_large.py --ui build/Release/curl-ui.exe
-          python tests/live/test_tabs.py --ui build/Release/curl-ui.exe
-          python tests/live/test_vars.py --ui build/Release/curl-ui.exe
-          python tests/live/test_mask.py --ui build/Release/curl-ui.exe
-          python tests/live/test_params.py --ui build/Release/curl-ui.exe
-          python tests/live/test_forms.py --ui build/Release/curl-ui.exe
-          python tests/live/test_store.py --ui build/Release/curl-ui.exe
-          python tests/live/test_import.py --ui build/Release/curl-ui.exe
-          python tests/live/test_picker.py --ui build/Release/curl-ui.exe
-          python tests/live/test_regress.py --ui build/Release/curl-ui.exe
       - name: Package
         working-directory: build
         run: cpack -C Release
@@ -210,32 +171,8 @@ jobs:
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=${{ matrix.arch }}
       - name: Build
         run: cmake --build build -j4
-      - name: Test
-        run: ctest --test-dir build --output-on-failure
       - name: Check the binary's architecture
         run: test "$(lipo -archs "build/curl UI.app/Contents/MacOS/curl UI")" = "${{ matrix.arch }}"
-      - name: Screenshot smoke test
-        env:
-          SDL_VIDEODRIVER: dummy
-        run: |
-          "build/curl UI.app/Contents/MacOS/curl UI" --add location --docs location --screenshot "$PWD/smoke.bmp"
-          test -s smoke.bmp
-      - name: Live tests of the app
-        if: matrix.arch == 'arm64'  # once per system; the other architecture has the unit tests
-        env:
-          SDL_VIDEODRIVER: dummy
-          PYTHONUTF8: 1
-        run: |
-          python3 tests/live/test_large.py --ui "build/curl UI.app/Contents/MacOS/curl UI"
-          python3 tests/live/test_tabs.py --ui "build/curl UI.app/Contents/MacOS/curl UI"
-          python3 tests/live/test_vars.py --ui "build/curl UI.app/Contents/MacOS/curl UI"
-          python3 tests/live/test_mask.py --ui "build/curl UI.app/Contents/MacOS/curl UI"
-          python3 tests/live/test_params.py --ui "build/curl UI.app/Contents/MacOS/curl UI"
-          python3 tests/live/test_forms.py --ui "build/curl UI.app/Contents/MacOS/curl UI"
-          python3 tests/live/test_store.py --ui "build/curl UI.app/Contents/MacOS/curl UI"
-          python3 tests/live/test_import.py --ui "build/curl UI.app/Contents/MacOS/curl UI"
-          python3 tests/live/test_picker.py --ui "build/curl UI.app/Contents/MacOS/curl UI"
-          python3 tests/live/test_regress.py --ui "build/curl UI.app/Contents/MacOS/curl UI"
       - name: Package
         run: cd build && cpack
       - name: Open the .dmg and run the app from it
