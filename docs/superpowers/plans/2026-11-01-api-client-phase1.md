@@ -22,7 +22,7 @@
 
 ## Review Focus
 
-1. **Μεγάλη τιμή μεταβλητής:** μια τιμή που κάνει το όρισμα μεγαλύτερο από 16 KB πρέπει να φτάνει ολόκληρη στο curl. Τεστ στο Task 3. Η σχεδίαση πάνω στο `arg_list` το εξασφαλίζει, αφού τα tokens είναι δυναμικά.
+1. **Μεγάλη τιμή:** τιμή 1 MB, γραμμένη ή από μεταβλητή, πρέπει να φτάνει ολόκληρη στον server, και σε Windows όπου το όριο εντολής είναι 32.767 χαρακτήρες. Τεστ στα Task 1b και 3.
 2. **Κλείσιμο tab ή εφαρμογής ενώ τρέχει το curl:** η διεργασία σταματά και τα buffers ελευθερώνονται μόνο μετά το `proc_free`, χωρίς use-after-free από τα reader threads. Τεστ στο Task 2, με sanitizers.
 3. **Όνομα συλλογής όπως `../../x`:** το όνομα αρχείου είναι δημιουργημένο id και ποτέ το όνομα, οπότε δεν γράφεται τίποτα εκτός του φακέλου. Τεστ στο Task 7.
 4. **Secrets που επικαλύπτονται** (ένα είναι υποσύνολο άλλου): η κάλυψη εφαρμόζεται πρώτα στο μακρύτερο, ώστε να μη μένει τμήμα ορατό. Τεστ στο Task 4.
@@ -63,6 +63,46 @@ int file_quarantine(const char *path, char *moved_to, size_t n);       /* path -
 - [ ] **Step 3: Υλοποίησε τα `json.c` και `fileio.c`.** Το `jv_write` κρατά τη σειρά των κλειδιών, ώστε τα αρχεία να δίνουν καθαρά diffs. Μετάφερε τα `make_parents`, `open_private`, `commit_file` από το `settings.c` στο `fileio.c`, και κάνε το `settings.c` να τα χρησιμοποιεί.
 - [ ] **Step 4: Τρέξε** όλο το `ctest`. Αναμενόμενο: όλα περνούν, και τα τεστ settings δεν αλλάζουν.
 - [ ] **Step 5: Commit:** `core: add a JSON tree and shared private file writing`
+
+### Task 1b: Χωρίς όριο μεγέθους τιμών
+
+**Files:**
+- Create: `src/core/argfile.c`, `src/core/argfile.h`
+- Modify: `src/core/builder.c`, `src/core/builder.h`, `src/core/settings.c`, `src/ui/draw.c`, `src/ui/view_center.c`, `src/ui/app.h`, `src/ui/app.c`, `tests/test_core.c`, `tests/test_args.c`, `tests/test_api.c`
+
+**Interfaces:**
+- Consumes: `arg_list`, `file_write_private`
+- Produces:
+```c
+/* builder.h: BUILDER_VALUE_CAP and BUILDER_URL_CAP are removed. */
+typedef struct { int opt, negated; char **values; size_t *caps; int nvalues; } sel_option;
+/* request: char *url; size_t url_cap; */
+char *request_set_value(sel_option *s, int i, const char *text); /* grows; returns the buffer */
+int request_set_url(request *r, const char *url);
+
+/* draw.c: grows *buf before the edit, to length + clipboard size + 4096 while focused. */
+nk_flags ui_edit_dyn(app_t *a, struct nk_rect r, char **buf, size_t *cap, const char *placeholder,
+                     const struct nk_user_font *font, nk_flags extra);
+
+#define ARG_SPILL_ONE 100000u
+#define ARG_SPILL_TOTAL 200000u
+#define ARG_SPILL_WIN_CMDLINE 30000u
+#define ARG_CONFIG_LINE_MAX (10u * 1024u * 1024u)   /* curl's MAX_CONFIG_LINE_LENGTH */
+int args_need_file(const char *const *argv);
+/* Everything after argv[0], except a leading --disable, as a config file with values quoted using
+   \\ \" \t \n \r \v. Returns 0, or -1 with err naming the option over ARG_CONFIG_LINE_MAX. */
+int args_write_config(const char *const *argv, const char *path, char *err, size_t n);
+void args_remove_stale(const char *settings_dir);   /* run-*.conf */
+```
+
+- [ ] **Step 1: Γράψε τα τεστ.** `request_set_value` με 5 MB κρατά όλο το κείμενο, και το `builder_build` το δίνει ολόκληρο. URL 100 KB το ίδιο. Το `next_pair` και τα αρχεία διαβάζουν γραμμή 5 MB. `args_need_file`: 99.000 bytes όχι, 101.000 ναι, πέντε τιμές των 50.000 ναι. `args_write_config`: `a"b\c`, αλλαγή γραμμής και tab, και το αποτέλεσμα περνά από πραγματικό curl με `echoargs`-server ίδιο byte προς byte. 11 MB δίνει `-1` με το όνομα της επιλογής στο `err`.
+- [ ] **Step 2: Τρέξε:** αποτυχία.
+- [ ] **Step 3: Υλοποίησε τα δυναμικά `values` και `url`** και το `argfile.c`. Αφαίρεσε τα δύο `#define`, και άλλαξε όλα τα `snprintf(..., BUILDER_VALUE_CAP, ...)` σε `request_set_value`.
+- [ ] **Step 4: Σύνδεσε το `app_run`.** Αν `args_need_file`: γράψε `run-<pid>-<n>.conf` στον φάκελο ρυθμίσεων, εκτέλεσε `curl [--disable] --config <αρχείο>` με τα capture flags, και σβήσε το στο τέλος της εκτέλεσης. Αν το `args_write_config` αποτύχει, δεν ξεκινά διεργασία: δείξε μήνυμα που προτείνει Body τύπου file ή `@αρχείο`. Κλήση του `args_remove_stale` στην εκκίνηση. Στο Command, τιμή πάνω από 2.000 χαρακτήρες κόβεται με ένδειξη μεγέθους, και το Copy μένει ολόκληρο. Χωρίς φάκελο ρυθμίσεων (`--screenshot`) χρησιμοποίησε τον φάκελο του `--settings-dir` ή το προσωρινό του συστήματος.
+- [ ] **Step 5: Μέτρησε την απόδοση πεδίου.** Με τιμή 1 MB και 5 MB, `--stats`. Αν ο μέγιστος χρόνος καρέ ξεπερνά τα 50 ms, το πεδίο δείχνει περίληψη («1.2 MB of text») με κουμπιά Replace from clipboard και Clear, αντί για επεξεργασία, ξεκινώντας από το μικρότερο μέγεθος που το ξεπερνά.
+- [ ] **Step 6: Γράψε το `tests/live/test_large.py`,** που τρέχει και στο CI σε όλες τις πλατφόρμες με τοπικό server: `--data` 1 MB φτάνει ολόκληρο, ίδιο hash. Το προσωρινό αρχείο δεν υπάρχει μετά το τέλος. Τιμή 11 MB δεν ξεκινά το curl και δείχνει το μήνυμα.
+- [ ] **Step 7: Τρέξε** όλα, και με sanitizers. Αναμενόμενο: περνούν.
+- [ ] **Step 8: Commit:** `Remove the size limits on option values and the URL`
 
 ### Task 2: Tabs
 
