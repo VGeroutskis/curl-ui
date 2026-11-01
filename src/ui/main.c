@@ -305,6 +305,8 @@ int main(int argc, char **argv)
   const char *screenshot = NULL, *docs = NULL, *search = NULL, *method = NULL;
   int ow, oh, ww, wh;
   int need_frames = 3;
+  SDL_Event held;
+  int have_held = 0;
   Uint32 render_flags = SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC;
 
   pick_workdir();
@@ -470,12 +472,13 @@ int main(int argc, char **argv)
     return rc ? 1 : 0;
   }
   SDL_RenderPresent(g_renderer);
+  SDL_StartTextInput();  /* not implied by every SDL backend */
 
   /* Event driven: asleep until something happens, except while curl runs, a
      hover is settling, or a caret needs blinking. */
   while(!a->quit) {
     SDL_Event ev;
-    int got;
+    int got, transition;
     int timeout = -1;
     if(need_frames > 0)
       timeout = 0;
@@ -484,14 +487,34 @@ int main(int argc, char **argv)
     else if(a->any_focus)
       timeout = 500;
 
-    got = timeout < 0 ? SDL_WaitEvent(&ev) : SDL_WaitEventTimeout(&ev, timeout);
+    if(have_held) {
+      ev = held;
+      got = 1;
+      have_held = 0;
+    }
+    else
+      got = timeout < 0 ? SDL_WaitEvent(&ev) : SDL_WaitEventTimeout(&ev, timeout);
     nk_input_begin(a->ctx);
+    transition = 0;
     while(got) {
+      /* Nuklear reads "pressed" from the state at the end of a frame, so a
+         press and its release in one frame are a press never seen: a quick
+         click would not focus a field, a quick key tap would be lost. One
+         button or key transition per frame; the next waits for its own. */
+      int is_transition = ev.type == SDL_MOUSEBUTTONDOWN || ev.type == SDL_MOUSEBUTTONUP ||
+                          ev.type == SDL_KEYDOWN || ev.type == SDL_KEYUP;
+      if(is_transition && transition) {
+        held = ev;
+        have_held = 1;
+        need_frames = 2;
+        break;
+      }
+      transition |= is_transition;
       if(ev.type == SDL_QUIT)
         a->quit = 1;
       nk_sdl_handle_event(&ev);
-      got = SDL_PollEvent(&ev);
       need_frames = 2;  /* Nuklear settles hover and focus a frame later */
+      got = SDL_PollEvent(&ev);
     }
     nk_input_end(a->ctx);
     if(need_frames > 0)

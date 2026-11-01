@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 # must precede project() to take effect
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Oldest macOS supported")
-project(curl-ui VERSION 0.1.0 LANGUAGES C)
+project(curl-ui VERSION 0.1.1 LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)

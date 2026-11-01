@@ -116,6 +116,7 @@ void view_frame(app_t *a)
   struct nk_rect center = nk_rect(lib_w, top, a->W - lib_w - doc_w, a->H - top);
   struct nk_input *in = &ctx->input;
   struct nk_vec2 saved_pos = in->mouse.pos;
+  struct nk_mouse_button saved_left = in->mouse.buttons[NK_BUTTON_LEFT];
   int menu_was_open = a->method_menu;
 
   a->cursor = CURSOR_ARROW;
@@ -160,7 +161,10 @@ void view_frame(app_t *a)
     nk_layout_space_end(ctx);
   }
   nk_end(ctx);
+  /* Blanking was for this frame's widgets only. Left blanked, the release of
+     a held button would look like no change, and Nuklear would drop it. */
   in->mouse.pos = saved_pos;
+  in->mouse.buttons[NK_BUTTON_LEFT] = saved_left;
 
   /* Docs follow the mouse, after a short dwell: moving across the middle
      column on the way to read them must not replace what is being read. */
