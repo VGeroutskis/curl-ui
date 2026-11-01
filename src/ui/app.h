@@ -6,6 +6,7 @@
 
 #include "nk.h"
 
+#include "argfile.h"
 #include "builder.h"
 #include "curlinfo.h"
 #include "docs.h"
@@ -74,6 +75,47 @@ typedef struct {
   int opt;          /* link target or -1 */
 } dop;
 
+#define MAX_TABS 32
+
+/* One open request: what it asks, and what its run produced. */
+typedef struct {
+  request req;
+  int method;           /* index into the method menu; 0 lets curl decide */
+  arg_list args;
+  int dirty;            /* differs from what is saved */
+  int run_at_start;     /* scripted: --run */
+
+  /* centre */
+  int show_recipes;
+  int method_menu;
+  int url_missing;      /* Run was pressed with nothing to fetch */
+  nk_uint cards_x, cards_y;
+  int cards_focus;
+  int cards_focus_prev;
+  nk_uint cards_lock_y;
+  float out_scroll;
+  int out_follow;
+  out_tab out_tab;
+  int pretty;
+
+  /* run */
+  proc_t *proc;
+  arg_files run_files;  /* the arguments, when too long for a command line */
+  outbuf *out, *log, *pretty_buf;
+  unsigned long run_started;
+  float run_secs;
+  int has_result, exit_code;
+  int http_status;
+  double curl_time;
+  long long curl_size;
+  int has_stats;
+  int pretty_valid;
+  size_t pretty_header_lines;
+  wrap_cache wrap_out, wrap_log, wrap_pretty;
+} tab_t;
+
+#define CUR(a) ((a)->tabs[(a)->cur])
+
 typedef struct {
   /* platform */
   struct nk_context *ctx;
@@ -91,15 +133,14 @@ typedef struct {
   int quit;
 
   /* model */
-  request req;
-  int method;           /* index into the method menu; 0 lets curl decide */
+  tab_t *tabs[MAX_TABS];
+  int ntabs, cur;
   settings_t set;
   char settings_path[SETTINGS_PATH_CAP];   /* "" means nothing is persisted */
   float settings_scroll;
   int settings_focus;
   int reset_settings;
   curl_info curl;
-  arg_list args;
 
   /* library */
   char search[SEARCH_CAP];
@@ -116,34 +157,7 @@ typedef struct {
   unsigned long sel_key;
   int sel_scratch[512];
 
-  /* centre */
-  int show_recipes;
-  int method_menu;
   int show_settings;
-  int url_missing;      /* Run was pressed with nothing to fetch */
-  nk_uint cards_x, cards_y;
-  int cards_focus;
-  int cards_focus_prev;
-  nk_uint cards_lock_y;
-  float out_scroll;
-  int out_follow;
-  out_tab tab;
-  int pretty;
-
-  /* run */
-  proc_t *proc;
-  char run_conf[SETTINGS_PATH_CAP + 64];  /* the arguments, when too long for a command line */
-  outbuf *out, *log, *pretty_buf;
-  unsigned long run_started;
-  float run_secs;
-  int has_result, exit_code;
-  int http_status;
-  double curl_time;
-  long long curl_size;
-  int has_stats;
-  int pretty_valid;
-  size_t pretty_header_lines;
-  wrap_cache wrap_out, wrap_log, wrap_pretty;
 
   /* docs */
   int doc_opt;
@@ -180,13 +194,16 @@ void app_toggle_option(app_t *a, int opt);
 void app_apply_recipe(app_t *a, int index);
 void app_run(app_t *a);
 void app_stop(app_t *a);
-void app_poll(app_t *a);       /* notices the end of a run */
+void app_poll(app_t *a);       /* notices the end of a run, in any tab */
+int app_any_running(const app_t *a);
+int tab_new(app_t *a);         /* a slot made current, or -1 at MAX_TABS */
+void tab_close(app_t *a, int i);  /* stops its run first; the last tab leaves a fresh one */
 void app_rebuild_args(app_t *a);
 void app_apply_actions(app_t *a);
 void app_push(app_t *a, act_kind kind, int x, int y);
 void app_set_doc(app_t *a, int opt, int push_history);
 void app_doc_back(app_t *a);
-const char *app_method_label(const app_t *a, int index);
+const char *app_method_label(const app_t *a, const tab_t *t, int index);
 int app_option_supported(const app_t *a, int opt);
 void app_clear_output(app_t *a);
 void wrap_free(wrap_cache *w);
@@ -240,6 +257,7 @@ void ui_copy(const char *text);
 
 /* views */
 void view_frame(app_t *a);
+void view_tabs(app_t *a, struct nk_rect r);
 void view_header(app_t *a, struct nk_rect r);
 void view_library(app_t *a, struct nk_rect r);
 void view_center(app_t *a, struct nk_rect r);

@@ -93,7 +93,7 @@ if(CURLUI_BUILD_GUI)
 
   set(CURLUI_SOURCES
     src/ui/main.c src/ui/app.c src/ui/theme.c src/ui/draw.c src/ui/fonts_data.c
-    src/ui/view_frame.c src/ui/view_library.c src/ui/view_center.c
+    src/ui/view_frame.c src/ui/view_tabs.c src/ui/view_library.c src/ui/view_center.c
     src/ui/view_output.c src/ui/view_docs.c src/ui/view_settings.c)
   if(WIN32)
     list(APPEND CURLUI_SOURCES packaging/curl-ui.rc)

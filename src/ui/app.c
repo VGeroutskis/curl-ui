@@ -50,63 +50,109 @@ void wrap_free(wrap_cache *w)
 
 /* With no explicit method curl picks one from the options; show what it will
    pick rather than a misleading GET. */
-const char *app_method_label(const app_t *a, int index)
+const char *app_method_label(const app_t *a, const tab_t *t, int index)
 {
   static const char *const body_opts[] = {
     "data", "data-ascii", "data-binary", "data-raw", "data-urlencode", "json", "form",
     "form-string", NULL
   };
   int i;
+  (void)a;
   if(index > 0)
     return method_names[index];
   for(i = 0; body_opts[i]; i++)
-    if(request_find(&a->req, options_find(body_opts[i])) >= 0)
+    if(request_find(&t->req, options_find(body_opts[i])) >= 0)
       return "POST";
-  if(request_find(&a->req, options_find("upload-file")) >= 0)
+  if(request_find(&t->req, options_find("upload-file")) >= 0)
     return "PUT";
-  if(request_find(&a->req, options_find("head")) >= 0)
+  if(request_find(&t->req, options_find("head")) >= 0)
     return "HEAD";
   return "GET";
+}
+
+static void tab_free(tab_t *t)
+{
+  /* the readers write to the buffers until the process is gone */
+  if(t->proc)
+    proc_free(t->proc);
+  args_files_remove(&t->run_files);
+  arg_list_free(&t->args);
+  outbuf_free(t->out);
+  outbuf_free(t->log);
+  outbuf_free(t->pretty_buf);
+  wrap_free(&t->wrap_out);
+  wrap_free(&t->wrap_log);
+  wrap_free(&t->wrap_pretty);
+  request_free(&t->req);
+  free(t);
+}
+
+int tab_new(app_t *a)
+{
+  tab_t *t;
+  if(a->ntabs == MAX_TABS)
+    return -1;
+  t = calloc(1, sizeof(*t));
+  if(!t)
+    return -1;
+  request_init(&t->req);
+  t->out = outbuf_new(0);
+  t->log = outbuf_new(0);
+  t->pretty_buf = outbuf_new(0);
+  outbuf_set_marker(t->log, MARKER_PREFIX);
+  t->out_follow = 1;
+  t->pretty = a->set.pretty;
+  a->tabs[a->ntabs] = t;
+  a->cur = a->ntabs++;
+  return a->cur;
+}
+
+void tab_close(app_t *a, int i)
+{
+  if(i < 0 || i >= a->ntabs)
+    return;
+  tab_free(a->tabs[i]);
+  memmove(&a->tabs[i], &a->tabs[i + 1], sizeof(tab_t *) * (size_t)(a->ntabs - i - 1));
+  a->ntabs--;
+  if(a->cur > i || a->cur >= a->ntabs)
+    a->cur = a->cur > 0 ? a->cur - 1 : 0;
+  if(!a->ntabs)
+    tab_new(a);
+  a->pending_unfocus = 1;
+}
+
+int app_any_running(const app_t *a)
+{
+  int i;
+  for(i = 0; i < a->ntabs; i++)
+    if(a->tabs[i]->proc)
+      return 1;
+  return 0;
 }
 
 void app_init(app_t *a)
 {
   memset(a, 0, sizeof(*a));
-  request_init(&a->req);
   settings_defaults(&a->set);
+  tab_new(a);
   a->results = malloc(sizeof(int) * (size_t)g_option_count);
-  a->out = outbuf_new(0);
-  a->log = outbuf_new(0);
-  a->pretty_buf = outbuf_new(0);
-  outbuf_set_marker(a->log, MARKER_PREFIX);
   a->doc_opt = -1;
   a->doc_built_opt = -2;
   a->hover_cand = -1;
-  a->out_follow = 1;
   a->filter_last = -1;
   a->doc_arena = malloc(8192);
 }
 
 void app_free(app_t *a)
 {
-  if(a->proc) {
-    proc_free(a->proc);
-    a->proc = NULL;
-  }
-  if(a->run_conf[0])
-    remove(a->run_conf);
-  arg_list_free(&a->args);
-  request_free(&a->req);
-  curlinfo_free(&a->curl);
-  outbuf_free(a->out);
-  outbuf_free(a->log);
-  outbuf_free(a->pretty_buf);
-  wrap_free(&a->wrap_out);
-  wrap_free(&a->wrap_log);
-  wrap_free(&a->wrap_pretty);
-  docs_free(&a->doc);
+  int i;
+  for(i = 0; i < a->ntabs; i++)
+    tab_free(a->tabs[i]);
+  a->ntabs = 0;
   free(a->dops);
   free(a->doc_arena);
+  docs_free(&a->doc);
+  curlinfo_free(&a->curl);
   free(a->results);
 }
 
@@ -123,11 +169,11 @@ int app_option_supported(const app_t *a, int opt)
 
 void app_rebuild_args(app_t *a)
 {
-  arg_list_free(&a->args);
-  a->req.no_curlrc = a->set.no_curlrc;
-  a->req.config_file = a->set.config_file;
-  snprintf(a->req.method, sizeof(a->req.method), "%s", method_names[a->method]);
-  builder_build(&a->req, a->set.program[0] ? a->set.program : "curl", &a->args);
+  arg_list_free(&CUR(a)->args);
+  CUR(a)->req.no_curlrc = a->set.no_curlrc;
+  CUR(a)->req.config_file = a->set.config_file;
+  snprintf(CUR(a)->req.method, sizeof(CUR(a)->req.method), "%s", method_names[CUR(a)->method]);
+  builder_build(&CUR(a)->req, a->set.program[0] ? a->set.program : "curl", &CUR(a)->args);
 }
 
 void app_add_option(app_t *a, const char *name, const char *value)
@@ -136,7 +182,7 @@ void app_add_option(app_t *a, const char *name, const char *value)
   sel_option *s;
   if(opt < 0)
     return;
-  s = request_add(&a->req, opt);
+  s = request_add(&CUR(a)->req, opt);
   if(s && value && g_options[opt].arg[0]) {
     int i, slot = -1;
     for(i = 0; i < s->nvalues && slot < 0; i++)
@@ -151,11 +197,11 @@ void app_add_option(app_t *a, const char *name, const char *value)
 
 void app_toggle_option(app_t *a, int opt)
 {
-  if(request_find(&a->req, opt) >= 0)
-    request_remove(&a->req, opt);
+  if(request_find(&CUR(a)->req, opt) >= 0)
+    request_remove(&CUR(a)->req, opt);
   else {
-    request_add(&a->req, opt);
-    a->show_recipes = 0;
+    request_add(&CUR(a)->req, opt);
+    CUR(a)->show_recipes = 0;
   }
 }
 
@@ -163,51 +209,43 @@ void app_apply_recipe(app_t *a, int index)
 {
   const recipe *r = &g_recipes[index];
   int i;
-  request_clear_options(&a->req);
-  a->method = 0;
-  request_set_url(&a->req, r->url);
+  request_clear_options(&CUR(a)->req);
+  CUR(a)->method = 0;
+  request_set_url(&CUR(a)->req, r->url);
   for(i = 0; i < 5 && r->opts[i].name; i++)
     app_add_option(a, r->opts[i].name, r->opts[i].value);
-  a->show_recipes = 0;
+  CUR(a)->show_recipes = 0;
 }
 
 void app_clear_output(app_t *a)
 {
-  outbuf_clear(a->out);
-  outbuf_clear(a->log);
-  outbuf_clear(a->pretty_buf);
-  a->has_result = 0;
-  a->has_stats = 0;
-  a->http_status = 0;
-  a->pretty_valid = 0;
-  a->pretty_header_lines = 0;
-  a->exit_code = 0;
-  a->out_scroll = 0;
-  a->out_follow = 1;
+  outbuf_clear(CUR(a)->out);
+  outbuf_clear(CUR(a)->log);
+  outbuf_clear(CUR(a)->pretty_buf);
+  CUR(a)->has_result = 0;
+  CUR(a)->has_stats = 0;
+  CUR(a)->http_status = 0;
+  CUR(a)->pretty_valid = 0;
+  CUR(a)->pretty_header_lines = 0;
+  CUR(a)->exit_code = 0;
+  CUR(a)->out_scroll = 0;
+  CUR(a)->out_follow = 1;
 }
 
 static void on_out(void *user, const char *data, size_t len)
 {
-  app_t *a = user;
-  outbuf_append(a->out, data, len);
+  tab_t *t = user;
+  outbuf_append(t->out, data, len);
 }
 
 static void on_err(void *user, const char *data, size_t len)
 {
-  app_t *a = user;
-  outbuf_append(a->log, data, len);
-}
-
-static void run_conf_remove(app_t *a)
-{
-  if(a->run_conf[0]) {
-    remove(a->run_conf);
-    a->run_conf[0] = '\0';
-  }
+  tab_t *t = user;
+  outbuf_append(t->log, data, len);
 }
 
 /* Next to the settings, or in the system's temporary folder for a scripted run. */
-static void run_conf_path(app_t *a)
+static void run_file_stem(app_t *a, char *stem, size_t stem_n)
 {
   static unsigned counter;
   char dir[SETTINGS_PATH_CAP];
@@ -234,7 +272,7 @@ static void run_conf_path(app_t *a)
       t = getenv("TEMP");
     snprintf(dir, sizeof(dir), "%s", t ? t : "/tmp");
   }
-  snprintf(a->run_conf, sizeof(a->run_conf), "%s/run-%u-%u.conf", dir, pid, ++counter);
+  snprintf(stem, stem_n, "%s/run-%u-%u", dir, pid, ++counter);
 }
 
 void app_run(app_t *a)
@@ -249,20 +287,20 @@ void app_run(app_t *a)
   char err[512], note[256];
   size_t note_n = 0;
 
-  if(a->proc)
+  if(CUR(a)->proc)
     return;
   app_clear_output(a);
   app_rebuild_args(a);
   /* curl would only say "no URL specified"; say where it goes instead */
-  a->url_missing = request_lacks_url(&a->req);
-  if(a->url_missing) {
-    a->tab = TAB_RESPONSE;
+  CUR(a)->url_missing = request_lacks_url(&CUR(a)->req);
+  if(CUR(a)->url_missing) {
+    CUR(a)->out_tab = TAB_RESPONSE;
     return;
   }
 
-  have_v = request_find(&a->req, options_find("verbose")) >= 0 ||
-           request_find(&a->req, options_find("trace")) >= 0 ||
-           request_find(&a->req, options_find("trace-ascii")) >= 0;
+  have_v = request_find(&CUR(a)->req, options_find("verbose")) >= 0 ||
+           request_find(&CUR(a)->req, options_find("trace")) >= 0 ||
+           request_find(&CUR(a)->req, options_find("trace-ascii")) >= 0;
   note[0] = '\0';
   if(!a->set.capture) {
     have_v = 1;
@@ -276,62 +314,88 @@ void app_run(app_t *a)
     extra[n++] = "--no-progress-meter";
     note_n += (size_t)snprintf(note + note_n, sizeof(note) - note_n, " --no-progress-meter");
   }
-  if(capture && request_find(&a->req, options_find("write-out")) < 0 && curlinfo_at_least(&a->curl, 7, 63)) {
+  if(capture && request_find(&CUR(a)->req, options_find("write-out")) < 0 && curlinfo_at_least(&a->curl, 7, 63)) {
     extra[n++] = "--write-out";
     extra[n++] = write_out;
     note_n += (size_t)snprintf(note + note_n, sizeof(note) - note_n, " --write-out <stats>");
   }
   extra[n] = NULL;
 
-  argv = arg_list_argv(&a->args, extra);
+  argv = arg_list_argv(&CUR(a)->args, extra);
   if(!argv)
     return;
   if(args_need_file(argv)) {
-    /* too long for a command line: curl reads them from a private file instead */
+    /* too long for a command line: curl reads them from private files instead */
     const char *short_argv[16];
     int m = 0, k;
+    size_t line_max = curlinfo_at_least(&a->curl, 8, 2) ? ARG_CONFIG_LINE_MAX : ARG_CONFIG_LINE_OLD;
+    char stem[SETTINGS_PATH_CAP + 64], conf[SETTINGS_PATH_CAP + 80];
     free((void *)argv);
-    run_conf_path(a);
-    if(args_write_config(&a->args, a->run_conf, err, sizeof(err))) {
+    argv = NULL;
+    run_file_stem(a, stem, sizeof(stem));
+    if(!args_spill_bodies(&CUR(a)->args, stem, &CUR(a)->run_files, err, sizeof(err))) {
+      argv = arg_list_argv(&CUR(a)->args, extra);
+      if(argv && args_need_file(argv)) {
+        free((void *)argv);
+        argv = NULL;
+        snprintf(conf, sizeof(conf), "%s.conf", stem);
+        if(!args_write_config(&CUR(a)->args, conf, line_max, err, sizeof(err))) {
+          char **grown = realloc(CUR(a)->run_files.paths, sizeof(char *) * (size_t)(CUR(a)->run_files.n + 1));
+          size_t cn = strlen(conf) + 1;
+          char *copy = malloc(cn);
+          if(grown)
+            CUR(a)->run_files.paths = grown;
+          if(grown && copy) {
+            memcpy(copy, conf, cn);
+            CUR(a)->run_files.paths[CUR(a)->run_files.n++] = copy;
+            short_argv[m++] = CUR(a)->args.tok[0].text;
+            if(CUR(a)->args.count > 1 && CUR(a)->args.tok[1].kind == TOK_FLAG &&
+               CUR(a)->args.tok[1].opt == options_find("disable"))
+              short_argv[m++] = CUR(a)->args.tok[1].text;
+            short_argv[m++] = "--config";
+            short_argv[m++] = copy;
+            for(k = 0; k < n; k++)
+              short_argv[m++] = extra[k];
+            short_argv[m] = NULL;
+            argv = malloc(sizeof(short_argv));
+            if(argv)
+              memcpy((void *)argv, short_argv, sizeof(short_argv));
+          }
+          else {
+            free(copy);
+            snprintf(err, sizeof(err), "out of memory");
+          }
+        }
+      }
+    }
+    if(!argv) {
       char line[900];
-      int len = snprintf(line, sizeof(line), "curl UI: %s. To send more, use an option's @file form, "
-                         "such as --data-binary @file, so that curl reads the file itself.\n", err);
-      outbuf_append(a->log, line, (size_t)len);
-      a->run_conf[0] = '\0';
-      a->tab = TAB_LOG;
-      a->has_result = 1;
-      a->exit_code = 2;
+      int len = snprintf(line, sizeof(line), "curl UI: %s. Use an option's @file form where it has one, "
+                         "so that curl reads the file itself.\n", err);
+      outbuf_append(CUR(a)->log, line, (size_t)len);
+      args_files_remove(&CUR(a)->run_files);
+      CUR(a)->out_tab = TAB_LOG;
+      CUR(a)->has_result = 1;
+      CUR(a)->exit_code = 2;
       return;
     }
-    short_argv[m++] = a->args.tok[0].text;
-    if(a->args.count > 1 && a->args.tok[1].opt == options_find("disable") && a->args.tok[1].kind == TOK_FLAG)
-      short_argv[m++] = a->args.tok[1].text;
-    short_argv[m++] = "--config";
-    short_argv[m++] = a->run_conf;
-    for(k = 0; k < n; k++)
-      short_argv[m++] = extra[k];
-    short_argv[m] = NULL;
-    argv = malloc(sizeof(short_argv));
-    if(!argv)
-      return;
-    memcpy((void *)argv, short_argv, sizeof(short_argv));
   }
   if(note_n) {
     char line[320];
     int len = snprintf(line, sizeof(line), "* curl UI also passed%s, to fill this tab and the status chips\n", note);
-    outbuf_append(a->log, line, (size_t)len);
+    outbuf_append(CUR(a)->log, line, (size_t)len);
   }
-  a->proc = proc_start(argv, on_out, on_err, a, err, sizeof(err));
+  CUR(a)->proc = proc_start(argv, on_out, on_err, CUR(a), err, sizeof(err));
   free((void *)argv);
-  a->run_started = SDL_GetTicks();
-  a->run_secs = 0;
-  if(!a->proc) {
+  CUR(a)->run_started = SDL_GetTicks();
+  CUR(a)->run_secs = 0;
+  if(!CUR(a)->proc) {
     char line[640];
     int len = snprintf(line, sizeof(line), "curl: %s\n", err);
-    outbuf_append(a->log, line, (size_t)len);
-    a->tab = TAB_LOG;
-    a->has_result = 1;
-    a->exit_code = 127;
+    outbuf_append(CUR(a)->log, line, (size_t)len);
+    CUR(a)->out_tab = TAB_LOG;
+    CUR(a)->has_result = 1;
+    CUR(a)->exit_code = 127;
   }
   for(i = 0; i < n; i++)
     (void)extra[i];
@@ -339,19 +403,19 @@ void app_run(app_t *a)
 
 void app_stop(app_t *a)
 {
-  if(a->proc)
-    proc_kill(a->proc);
+  if(CUR(a)->proc)
+    proc_kill(CUR(a)->proc);
 }
 
 /* Offers the body (minus any leading HTTP headers from --include) to the JSON
    printer, and keeps the headers above the result. */
-static void make_pretty(app_t *a)
+static void make_pretty(tab_t *t)
 {
   size_t len = 0, skip = 0, header_lines = 0, out_len = 0;
   char *text, *pretty;
-  if(outbuf_truncated(a->out))
+  if(outbuf_truncated(t->out))
     return;
-  text = outbuf_join(a->out, &len);
+  text = outbuf_join(t->out, &len);
   if(!text)
     return;
   while(!strncmp(text + skip, "HTTP/", 5)) {
@@ -367,36 +431,43 @@ static void make_pretty(app_t *a)
   }
   pretty = json_pretty(text + skip, len - skip, &out_len);
   if(pretty) {
-    outbuf_append(a->pretty_buf, text, skip);
-    outbuf_append(a->pretty_buf, pretty, out_len);
-    a->pretty_valid = 1;
-    a->pretty_header_lines = header_lines;
+    outbuf_append(t->pretty_buf, text, skip);
+    outbuf_append(t->pretty_buf, pretty, out_len);
+    t->pretty_valid = 1;
+    t->pretty_header_lines = header_lines;
   }
   free(pretty);
   free(text);
 }
 
-void app_poll(app_t *a)
+static void poll_tab(tab_t *t)
 {
   char marker[OUTBUF_MARKER_CAP];
-  if(!a->proc)
+  if(!t->proc)
     return;
-  a->run_secs = (float)(SDL_GetTicks() - a->run_started) / 1000.0f;
-  if(!proc_finished(a->proc))
+  t->run_secs = (float)(SDL_GetTicks() - t->run_started) / 1000.0f;
+  if(!proc_finished(t->proc))
     return;
-  a->exit_code = proc_wait(a->proc);
-  proc_free(a->proc);
-  a->proc = NULL;
-  run_conf_remove(a);
-  a->has_result = 1;
-  if(outbuf_get_marker(a->log, marker, sizeof(marker))) {
-    if(sscanf(marker, "http=%d time=%lf size=%lld", &a->http_status, &a->curl_time, &a->curl_size) == 3)
-      a->has_stats = 1;
+  t->exit_code = proc_wait(t->proc);
+  proc_free(t->proc);
+  t->proc = NULL;
+  args_files_remove(&t->run_files);
+  t->has_result = 1;
+  if(outbuf_get_marker(t->log, marker, sizeof(marker))) {
+    if(sscanf(marker, "http=%d time=%lf size=%lld", &t->http_status, &t->curl_time, &t->curl_size) == 3)
+      t->has_stats = 1;
   }
-  make_pretty(a);
+  make_pretty(t);
   /* nothing on stdout and a failure: the explanation is in the log */
-  if(a->exit_code && outbuf_line_count(a->out) == 0)
-    a->tab = TAB_LOG;
+  if(t->exit_code && outbuf_line_count(t->out) == 0)
+    t->out_tab = TAB_LOG;
+}
+
+void app_poll(app_t *a)
+{
+  int i;
+  for(i = 0; i < a->ntabs; i++)
+    poll_tab(a->tabs[i]);
 }
 
 void app_push(app_t *a, act_kind kind, int x, int y)
@@ -423,31 +494,31 @@ void app_apply_actions(app_t *a)
       break;
     case ACT_REMOVE:
       a->pending_unfocus = 1;
-      request_remove(&a->req, act->a);
+      request_remove(&CUR(a)->req, act->a);
       break;
     case ACT_ADD_VALUE:
-      slot = request_find(&a->req, act->a);
+      slot = request_find(&CUR(a)->req, act->a);
       if(slot >= 0)
-        request_add_value(&a->req.sel[slot]);
+        request_add_value(&CUR(a)->req.sel[slot]);
       break;
     case ACT_REMOVE_VALUE:
       a->pending_unfocus = 1;
-      slot = request_find(&a->req, act->a);
+      slot = request_find(&CUR(a)->req, act->a);
       if(slot >= 0) {
-        request_remove_value(&a->req.sel[slot], act->b);
-        if(!a->req.sel[slot].nvalues)
-          request_remove(&a->req, act->a);
+        request_remove_value(&CUR(a)->req.sel[slot], act->b);
+        if(!CUR(a)->req.sel[slot].nvalues)
+          request_remove(&CUR(a)->req, act->a);
       }
       break;
     case ACT_SET_NEG:
-      slot = request_find(&a->req, act->a);
+      slot = request_find(&CUR(a)->req, act->a);
       if(slot >= 0)
-        a->req.sel[slot].negated = act->b;
+        CUR(a)->req.sel[slot].negated = act->b;
       break;
     case ACT_CLEAR:
       a->pending_unfocus = 1;
-      request_clear_options(&a->req);
-      a->show_recipes = 1;
+      request_clear_options(&CUR(a)->req);
+      CUR(a)->show_recipes = 1;
       break;
     case ACT_RECIPE:
       a->pending_unfocus = 1;
@@ -458,13 +529,13 @@ void app_apply_actions(app_t *a)
       break;
     case ACT_USE_AS_URL:
       a->pending_unfocus = 1;
-      slot = request_find(&a->req, act->a);
-      if(slot >= 0 && act->b < a->req.sel[slot].nvalues) {
-        char *v = a->req.sel[slot].values[act->b];
-        request_set_url(&a->req, v);
+      slot = request_find(&CUR(a)->req, act->a);
+      if(slot >= 0 && act->b < CUR(a)->req.sel[slot].nvalues) {
+        char *v = CUR(a)->req.sel[slot].values[act->b];
+        request_set_url(&CUR(a)->req, v);
         v[0] = '\0';
       }
-      a->url_missing = 0;
+      CUR(a)->url_missing = 0;
       break;
     case ACT_STOP:
       app_stop(a);

@@ -70,7 +70,76 @@ static size_t put_quoted(FILE *f, const char *s)
   return n;
 }
 
-int args_write_config(const arg_list *l, const char *path, char *err, size_t n)
+int args_spill_bodies(arg_list *l, const char *stem, arg_files *out, char *err, size_t n)
+{
+  static const char *const bodies[] = { "data", "data-ascii", "data-raw", "data-binary", "json", NULL };
+  int raw = options_find("data-raw"), json = options_find("json");
+  int i, b;
+  for(i = 1; i + 1 < l->count; i++) {
+    arg_token *t = &l->tok[i], *v = &l->tok[i + 1];
+    size_t vn, pn;
+    char *path, *value, *flag = NULL, **grown;
+    int is_body = 0;
+    if(t->kind != TOK_FLAG || v->kind != TOK_VALUE)
+      continue;
+    for(b = 0; bodies[b]; b++)
+      if(t->opt == options_find(bodies[b]))
+        is_body = 1;
+    vn = strlen(v->text);
+    if(!is_body || vn <= ARG_BODY_SPILL || (v->text[0] == '@' && t->opt != raw))
+      continue;
+    pn = strlen(stem) + 32;
+    path = malloc(pn);
+    value = malloc(pn + 1);
+    grown = realloc(out->paths, sizeof(char *) * (size_t)(out->n + 1));
+    if(t->opt != json) {
+      flag = malloc(16);
+      if(flag)
+        memcpy(flag, "--data-binary", 14);
+    }
+    if(grown)
+      out->paths = grown;
+    if(!path || !value || !grown || (t->opt != json && !flag)) {
+      free(path);
+      free(value);
+      free(flag);
+      snprintf(err, n, "out of memory");
+      return -1;
+    }
+    snprintf(path, pn, "%s-b%d.conf", stem, out->n);
+    if(file_write_private(path, v->text, vn)) {
+      snprintf(err, n, "cannot write %s", path);
+      free(path);
+      free(value);
+      free(flag);
+      return -1;
+    }
+    snprintf(value, pn + 1, "@%s", path);
+    out->paths[out->n++] = path;
+    free(v->text);
+    v->text = value;
+    if(flag) {
+      free(t->text);
+      t->text = flag;
+    }
+    i++;
+  }
+  return 0;
+}
+
+void args_files_remove(arg_files *f)
+{
+  int i;
+  for(i = 0; i < f->n; i++) {
+    remove(f->paths[i]);
+    free(f->paths[i]);
+  }
+  free(f->paths);
+  f->paths = NULL;
+  f->n = 0;
+}
+
+int args_write_config(const arg_list *l, const char *path, size_t line_max, char *err, size_t n)
 {
   size_t tn = strlen(path) + 8;
   char *tmp = malloc(tn);
@@ -84,9 +153,9 @@ int args_write_config(const arg_list *l, const char *path, char *err, size_t n)
     const arg_token *v = i + 1 < l->count && t->kind == TOK_FLAG && l->tok[i + 1].kind != TOK_FLAG ? t + 1 : NULL;
     const char *value = t->kind == TOK_FLAG ? (v ? v->text : NULL) : t->text;
     const char *flag = t->kind == TOK_FLAG ? t->text : "--url";
-    if(value && strlen(flag) + 1 + put_quoted(NULL, value) >= ARG_CONFIG_LINE_MAX) {
-      snprintf(err, n, "%s is over the %u MB curl reads from a config file", flag,
-               ARG_CONFIG_LINE_MAX / (1024u * 1024u));
+    if(value && strlen(flag) + 1 + put_quoted(NULL, value) >= line_max) {
+      snprintf(err, n, "%s is over the %.1f MB this curl can take for it", flag,
+               (double)line_max / (1024.0 * 1024.0));
       free(tmp);
       return -1;
     }

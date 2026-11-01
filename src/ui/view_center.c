@@ -21,11 +21,11 @@ static int conflict_text(const app_t *a, int opt, char *out, size_t n)
   int i, count = 0;
   size_t used = 0;
   out[0] = '\0';
-  for(i = 0; i < a->req.nsel; i++) {
-    const opt_def *other = &g_options[a->req.sel[i].opt];
+  for(i = 0; i < CUR(a)->req.nsel; i++) {
+    const opt_def *other = &g_options[CUR(a)->req.sel[i].opt];
     const char *const *m;
     int hit = 0;
-    if(a->req.sel[i].opt == opt)
+    if(CUR(a)->req.sel[i].opt == opt)
       continue;
     for(m = o->mutexes; m && *m; m++)
       if(!strcmp(*m, other->name))
@@ -48,10 +48,10 @@ static int proto_clash(const app_t *a, int opt)
   unsigned mine = options_proto_mask(opt);
   if(!mine)
     return -1;
-  for(i = 0; i < a->req.nsel; i++) {
-    unsigned other = options_proto_mask(a->req.sel[i].opt);
-    if(a->req.sel[i].opt != opt && other && !(other & mine))
-      return a->req.sel[i].opt;
+  for(i = 0; i < CUR(a)->req.nsel; i++) {
+    unsigned other = options_proto_mask(CUR(a)->req.sel[i].opt);
+    if(CUR(a)->req.sel[i].opt != opt && other && !(other & mine))
+      return CUR(a)->req.sel[i].opt;
   }
   return -1;
 }
@@ -61,7 +61,7 @@ static int proto_clash(const app_t *a, int opt)
 static int url_value_slot(const app_t *a, const sel_option *s)
 {
   int j;
-  if(a->req.url[0] || !strcmp(g_options[s->opt].name, "url"))
+  if(CUR(a)->req.url[0] || !strcmp(g_options[s->opt].name, "url"))
     return -1;
   for(j = 0; j < s->nvalues; j++)
     if(value_looks_like_url(s->values[j]))
@@ -208,7 +208,7 @@ static void draw_card(app_t *a, struct nk_rect r, sel_option *s)
       st = ui_edit_dyn(a, nk_rect(x, y, fw, FIELD_H), &s->values[j], &s->caps[j], o->placeholder,
                    a->f.mono_small, 0);
       if(st & NK_EDIT_ACTIVE)
-        a->cards_focus = 1;
+        CUR(a)->cards_focus = 1;
       if(o->repeatable && s->nvalues > 1) {
         struct nk_rect del = nk_rect(x + fw + 4, y + 3, 22, 22);
         int hd = ui_hover(a, del);
@@ -272,22 +272,22 @@ static void draw_list(app_t *a, struct nk_rect r)
   struct nk_context *ctx = a->ctx;
   struct nk_rect saved_clip = g_clip;
   struct nk_vec2 saved_origin = g_space_origin;
-  int recipes = a->show_recipes || a->req.nsel == 0;
+  int recipes = CUR(a)->show_recipes || CUR(a)->req.nsel == 0;
   float total = 0;
   int i;
-  nk_uint locked_y = a->cards_y;
+  nk_uint locked_y = CUR(a)->cards_y;
 
-  a->cards_focus = 0;
+  CUR(a)->cards_focus = 0;
   if(recipes)
     total = (float)((g_recipe_count + 1) / 2) * (RECIPE_H + CARD_GAP);
   else
-    for(i = 0; i < a->req.nsel; i++)
-      total += card_height(a, &a->req.sel[i]) + CARD_GAP;
+    for(i = 0; i < CUR(a)->req.nsel; i++)
+      total += card_height(a, &CUR(a)->req.sel[i]) + CARD_GAP;
 
   nk_layout_space_push(ctx, nk_rect(r.x - g_space_origin.x, r.y - g_space_origin.y, r.w, r.h));
   /* group backgrounds come from the window style: the panel colour here */
   nk_style_push_style_item(ctx, &ctx->style.window.fixed_background, nk_style_item_color(a->pal.bg));
-  if(nk_group_scrolled_offset_begin(ctx, &a->cards_x, &a->cards_y, "cards", 0)) {
+  if(nk_group_scrolled_offset_begin(ctx, &CUR(a)->cards_x, &CUR(a)->cards_y, "cards", 0)) {
     struct nk_rect b, vis;
     nk_style_pop_style_item(ctx);
     nk_layout_space_begin(ctx, NK_STATIC, total > 1 ? total : 1, INT_MAX);
@@ -310,9 +310,9 @@ static void draw_list(app_t *a, struct nk_rect r)
         }
       }
       else {
-        for(i = 0; i < a->req.nsel; i++) {
-          float h = card_height(a, &a->req.sel[i]);
-          draw_card(a, nk_rect(b.x, y, b.w, h), &a->req.sel[i]);
+        for(i = 0; i < CUR(a)->req.nsel; i++) {
+          float h = card_height(a, &CUR(a)->req.sel[i]);
+          draw_card(a, nk_rect(b.x, y, b.w, h), &CUR(a)->req.sel[i]);
           y += h + CARD_GAP;
         }
       }
@@ -325,8 +325,8 @@ static void draw_list(app_t *a, struct nk_rect r)
   /* A nk_edit is identified by draw order, and an edit scrolled out of view
      is skipped, so scrolling would hand the focus to a neighbour. Hold the
      list still while one of its fields has the focus. */
-  if(a->cards_focus)
-    a->cards_y = locked_y;
+  if(CUR(a)->cards_focus)
+    CUR(a)->cards_y = locked_y;
   g_clip = saved_clip;
   g_space_origin = saved_origin;
   nk_push_scissor(nk_window_get_canvas(ctx), saved_clip);
@@ -392,8 +392,8 @@ static int layout_command(app_t *a, float x0, float y0, float w, int draw)
   int col = 0, row = 0, i;
   if(cols < 10)
     cols = 10;
-  for(i = 0; i < a->args.count; i++) {
-    const arg_token *t = &a->args.tok[i];
+  for(i = 0; i < CUR(a)->args.count; i++) {
+    const arg_token *t = &CUR(a)->args.tok[i];
     char *q = token_preview(t->text);
     size_t len, off = 0;
     int glyphs = 0;
@@ -448,7 +448,7 @@ static void draw_command(app_t *a, struct nk_rect r)
   ui_stroke(a, r, 7, p->border);
   ui_text_fit(a, a->f.semi, r.x + 12, r.y + 6, 20, 120, "Command", p->text);
   if(ui_button(a, copy, "Copy", BTN_SECONDARY)) {
-    char *prev = builder_preview(&a->args);
+    char *prev = builder_preview(&CUR(a)->args);
     if(prev) {
       ui_copy(prev);
       free(prev);
@@ -500,8 +500,8 @@ void center_draw_menu(app_t *a, struct nk_rect center)
       a->cursor = CURSOR_HAND;
     }
     ui_text(a, a->f.mono, item.x + 8, item.y + (26 - a->f.mono->height) / 2,
-            i == 0 ? "Auto" : app_method_label(a, i), i == 0 ? 4 : (int)strlen(app_method_label(a, i)),
-            i == a->method ? p->accent : p->text);
+            i == 0 ? "Auto" : app_method_label(a, CUR(a), i), i == 0 ? 4 : (int)strlen(app_method_label(a, CUR(a), i)),
+            i == CUR(a)->method ? p->accent : p->text);
   }
 }
 
@@ -526,33 +526,33 @@ void view_center(app_t *a, struct nk_rect r)
   nk_flags st;
   float cmd_h, list_h, out_h, avail;
   char tmp[64];
-  int running = a->proc != NULL;
+  int running = CUR(a)->proc != NULL;
 
   ui_push_clip(a, r);
 
   /* request bar */
   {
     int hover = ui_hover(a, mb);
-    const char *label = app_method_label(a, a->method);
+    const char *label = app_method_label(a, CUR(a), CUR(a)->method);
     float cx = mb.x + mb.w - 15, cy = mb.y + 17;
     ui_rect(a, mb, 5, hover ? p->hover : p->card);
-    ui_stroke(a, mb, 5, a->method_menu ? p->accent : p->border);
+    ui_stroke(a, mb, 5, CUR(a)->method_menu ? p->accent : p->border);
     ui_text(a, a->f.mono_semi, mb.x + 10, mb.y + (34 - a->f.mono_semi->height) / 2, label, (int)strlen(label),
-            a->method ? p->text : p->dim);
+            CUR(a)->method ? p->text : p->dim);
     nk_fill_triangle(cv, cx - 4, cy - 2, cx + 4, cy - 2, cx, cy + 3, p->dim);
     if(hover)
       a->cursor = CURSOR_HAND;
     if(ui_clicked(a, mb))
-      a->method_menu = !a->method_menu;
+      CUR(a)->method_menu = !CUR(a)->method_menu;
   }
   run = nk_rect(x + w - 76, y, 76, 34);
-  st = ui_edit_dyn(a, nk_rect(mb.x + mb.w + 6, y, w - mb.w - 76 - 12, 34), &a->req.url, &a->req.url_cap,
+  st = ui_edit_dyn(a, nk_rect(mb.x + mb.w + 6, y, w - mb.w - 76 - 12, 34), &CUR(a)->req.url, &CUR(a)->req.url_cap,
                "https://example.com", a->f.mono, NK_EDIT_SIG_ENTER);
   if((st & NK_EDIT_COMMITED) && !running)
     app_push(a, ACT_RUN, 0, 0);
-  if(a->req.url[0] || !request_lacks_url(&a->req))
-    a->url_missing = 0;
-  if(a->url_missing)
+  if(CUR(a)->req.url[0] || !request_lacks_url(&CUR(a)->req))
+    CUR(a)->url_missing = 0;
+  if(CUR(a)->url_missing)
     ui_stroke(a, nk_rect(mb.x + mb.w + 6, y, w - mb.w - 76 - 12, 34), 5, p->amber);
   if(ui_button(a, run, running ? "Stop" : "Run", running ? BTN_DANGER : BTN_PRIMARY))
     app_push(a, running ? ACT_STOP : ACT_RUN, 0, 0);
@@ -560,14 +560,14 @@ void view_center(app_t *a, struct nk_rect r)
 
   /* options header */
   ui_text_fit(a, a->f.semi, x, y, 24, 70, "Options", p->text);
-  if(a->req.nsel) {
-    snprintf(tmp, sizeof(tmp), "%d", a->req.nsel);
+  if(CUR(a)->req.nsel) {
+    snprintf(tmp, sizeof(tmp), "%d", CUR(a)->req.nsel);
     ui_pill(a, x + ui_text_w(a->f.semi, "Options", 7) + 8, y + 3, tmp, p->accent, p->accent_soft);
   }
-  if(ui_button(a, nk_rect(x + w - 74, y, 74, 24), "Clear all", BTN_GHOST) && a->req.nsel)
+  if(ui_button(a, nk_rect(x + w - 74, y, 74, 24), "Clear all", BTN_GHOST) && CUR(a)->req.nsel)
     app_push(a, ACT_CLEAR, 0, 0);
   if(ui_button(a, nk_rect(x + w - 74 - 70, y, 66, 24), "Recipes", BTN_GHOST))
-    a->show_recipes = !a->show_recipes;
+    CUR(a)->show_recipes = !CUR(a)->show_recipes;
   y += 30;
 
   /* Output height comes from the space really left, not a fixed share. */

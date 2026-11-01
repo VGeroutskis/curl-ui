@@ -183,7 +183,7 @@ static void frame(app_t *a)
 
 /* ---- scripted test hooks ---- */
 
-typedef enum { SC_MOUSE, SC_CLICK, SC_PASTE, SC_TYPE, SC_WHEEL } script_kind;
+typedef enum { SC_MOUSE, SC_CLICK, SC_PASTE, SC_SELECT_TAB, SC_CLOSE_TAB, SC_TYPE, SC_WHEEL } script_kind;
 typedef struct {
   script_kind kind;
   int x, y, dy;
@@ -270,7 +270,7 @@ static void settle(app_t *a)
 static void wait_run(app_t *a)
 {
   Uint32 t0 = SDL_GetTicks();
-  while(a->proc && SDL_GetTicks() - t0 < 20000) {
+  while(app_any_running(a) && SDL_GetTicks() - t0 < 20000) {
     input_frame(a, NULL, NULL);
     SDL_Delay(10);
   }
@@ -296,6 +296,16 @@ static void run_script(app_t *a, const script_op *ops, int n)
     case SC_WHEEL:
       input_frame(a, feed_motion, op);
       input_frame(a, feed_wheel, op);
+      settle(a);
+      break;
+    case SC_SELECT_TAB:
+      if(op->x >= 0 && op->x < a->ntabs)
+        a->cur = op->x;
+      a->pending_unfocus = 1;
+      settle(a);
+      break;
+    case SC_CLOSE_TAB:
+      tab_close(a, op->x);
       settle(a);
       break;
     case SC_PASTE:
@@ -336,14 +346,20 @@ static void run_script(app_t *a, const script_op *ops, int n)
 static int write_dump(app_t *a, const char *path)
 {
   FILE *f = fopen(path, "wb");
-  char *cmd = builder_preview(&a->args);
-  char *out = outbuf_join(a->out, NULL);
-  char *log = outbuf_join(a->log, NULL);
+  char *cmd = builder_preview(&CUR(a)->args);
+  char *out = outbuf_join(CUR(a)->out, NULL);
+  char *log = outbuf_join(CUR(a)->log, NULL);
+  int i;
   if(f) {
-    fprintf(f, "exit=%d\nhad_result=%d\nhttp=%d\nstats=%d\nsize=%lld\nurl_missing=%d\n", a->exit_code, a->has_result,
-            a->http_status, a->has_stats, a->curl_size, a->url_missing);
-    fprintf(f, "listed=%d\nhidden=%d\n", a->nresults, a->nhidden);
+    fprintf(f, "exit=%d\nhad_result=%d\nhttp=%d\nstats=%d\nsize=%lld\nurl_missing=%d\n", CUR(a)->exit_code, CUR(a)->has_result,
+            CUR(a)->http_status, CUR(a)->has_stats, CUR(a)->curl_size, CUR(a)->url_missing);
+    fprintf(f, "listed=%d\nhidden=%d\ntabs=%d\ncur=%d\n", a->nresults, a->nhidden, a->ntabs, a->cur);
     fprintf(f, "command=%s\n---stdout---\n%s\n---log---\n%s\n", cmd ? cmd : "", out ? out : "", log ? log : "");
+    for(i = 0; i < a->ntabs; i++) {
+      char *text = outbuf_join(a->tabs[i]->out, NULL);
+      fprintf(f, "===tab %d exit=%d http=%d\n%s\n", i, a->tabs[i]->exit_code, a->tabs[i]->http_status, text ? text : "");
+      free(text);
+    }
     fclose(f);
   }
   free(cmd);
@@ -412,7 +428,7 @@ int main(int argc, char **argv)
   app_t *a = &g_app;
   script_op ops[MAX_SCRIPT];
   int win_size_given = 0;
-  int nops = 0, want_run = 0, want_log = 0, light = 0, stats = 0, win_w = 1360, win_h = 840, i;
+  int nops = 0, no_wait = 0, want_log = 0, light = 0, stats = 0, win_w = 1360, win_h = 840, i;
   const char *settings_dir = NULL, *dump = NULL;
   char request_path[SETTINGS_PATH_CAP] = "";
   int have_cli_request = 0;
@@ -450,9 +466,9 @@ int main(int argc, char **argv)
     settings_load(&a->set, a->settings_path);
     settings_path(settings_dir, "last-request.txt", request_path, sizeof(request_path));
     if(a->set.remember && !have_cli_request)
-      request_load(&a->req, &a->method, request_path);
+      request_load(&CUR(a)->req, &CUR(a)->method, request_path);
   }
-  a->pretty = a->set.pretty;
+  CUR(a)->pretty = a->set.pretty;
   screenshot = NULL;
 
 #define NEXT() (++i < argc ? argv[i] : (fprintf(stderr, "%s needs a value\n", argv[i - 1]), exit(2), ""))
@@ -499,18 +515,18 @@ int main(int argc, char **argv)
         fprintf(stderr, "no --no- form: %s\n", name);
         return 2;
       }
-      sel = request_add(&a->req, opt);
+      sel = request_add(&CUR(a)->req, opt);
       if(sel)
         sel->negated = 1;
     }
     else if(!strcmp(arg, "--dump"))
       dump = NEXT();
     else if(!strcmp(arg, "--url"))
-      request_set_url(&a->req, NEXT());
+      request_set_url(&CUR(a)->req, NEXT());
     else if(!strcmp(arg, "--method"))
       method = NEXT();
     else if(!strcmp(arg, "--run"))
-      want_run = 1;
+      CUR(a)->run_at_start = 1;
     else if(!strcmp(arg, "--light"))
       light = 1;
     else if(!strcmp(arg, "--docs"))
@@ -548,6 +564,19 @@ int main(int argc, char **argv)
         return 2;
       }
     }
+    else if((!strcmp(arg, "--select-tab") || !strcmp(arg, "--close-tab")) && nops < MAX_SCRIPT) {
+      script_op *op = &ops[nops++];
+      op->kind = arg[2] == 's' ? SC_SELECT_TAB : SC_CLOSE_TAB;
+      op->x = atoi(NEXT());
+    }
+    else if(!strcmp(arg, "--tab")) {
+      if(tab_new(a) < 0) {
+        fprintf(stderr, "too many tabs\n");
+        return 2;
+      }
+    }
+    else if(!strcmp(arg, "--no-wait"))
+      no_wait = 1;
     else if(!strcmp(arg, "--paste-file") && nops < MAX_SCRIPT) {
       script_op *op = &ops[nops++];
       op->kind = SC_PASTE;
@@ -640,8 +669,8 @@ int main(int argc, char **argv)
   app_detect_curl(a);
   if(method) {
     for(i = 1; i < METHOD_COUNT; i++)
-      if(!strcmp(app_method_label(a, i), method))
-        a->method = i;
+      if(!strcmp(app_method_label(a, CUR(a), i), method))
+        CUR(a)->method = i;
   }
   if(search)
     snprintf(a->search, sizeof(a->search), "%s", search);
@@ -654,18 +683,28 @@ int main(int argc, char **argv)
     a->doc_opt = d;
   }
   if(want_log)
-    a->tab = TAB_LOG;
+    CUR(a)->out_tab = TAB_LOG;
 
   settle(a);
-  if(want_run) {
-    app_run(a);
+  {
+    int keep = a->cur, t;
+    for(t = 0; t < a->ntabs; t++) {
+      if(a->tabs[t]->run_at_start) {
+        a->cur = t;
+        app_run(a);
+      }
+    }
+    a->cur = keep;
+  }
+  if(!no_wait) {
     wait_run(a);
     /* the run may switch tabs: an explicit --log still wins */
     if(want_log)
-      a->tab = TAB_LOG;
+      CUR(a)->out_tab = TAB_LOG;
   }
   run_script(a, ops, nops);
-  wait_run(a);
+  if(!no_wait)
+    wait_run(a);
 
   if(screenshot) {
     int rc;
@@ -675,7 +714,7 @@ int main(int argc, char **argv)
     if(a->settings_path[0]) {
       settings_save(&a->set, a->settings_path);
       if(a->set.remember)
-        request_save(&a->req, a->method, request_path);
+        request_save(&CUR(a)->req, CUR(a)->method, request_path);
     }
     /* render once more to a presented-free back buffer and read it */
     rc = save_screenshot(screenshot);
@@ -702,7 +741,7 @@ int main(int argc, char **argv)
     int timeout = -1;
     if(need_frames > 0)
       timeout = 0;
-    else if(a->proc || a->wants_timer || a->drag_scroll)
+    else if(app_any_running(a) || a->wants_timer || a->drag_scroll)
       timeout = 30;
     else if(a->any_focus)
       timeout = 500;
@@ -753,6 +792,14 @@ int main(int argc, char **argv)
       }
       if(ev.type == SDL_QUIT)
         a->quit = 1;
+      if(ev.type == SDL_KEYDOWN && (ev.key.keysym.mod & (KMOD_CTRL | KMOD_GUI))) {
+        if(ev.key.keysym.sym == SDLK_t && tab_new(a) >= 0)
+          a->pending_unfocus = 1;
+        else if(ev.key.keysym.sym == SDLK_w)
+          tab_close(a, a->cur);
+        else if(ev.key.keysym.sym == SDLK_RETURN && !CUR(a)->proc)
+          app_run(a);
+      }
       /* the UI is laid out in zoomed units, SDL reports window units */
       if(ev.type == SDL_MOUSEMOTION) {
         ev.motion.x = (Sint32)((float)ev.motion.x / g_zoom);
@@ -790,7 +837,7 @@ int main(int argc, char **argv)
     SDL_GetWindowSize(g_window, &a->set.win_w, &a->set.win_h);
     settings_save(&a->set, a->settings_path);
     if(a->set.remember)
-      request_save(&a->req, a->method, request_path);
+      request_save(&CUR(a)->req, CUR(a)->method, request_path);
     else
       remove(request_path);  /* turning it off forgets what it held */
   }

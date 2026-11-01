@@ -306,7 +306,7 @@ static void build_page(app_t *a, int opt, float width)
       y = flow_pill(a, arena_fmt(a, "--%s", o->neg), C_DIM, &x, y, width);
     if(o->deprecated)
       y = flow_pill(a, "deprecated", C_AMBER, &x, y, width);
-    if(request_find(&a->req, opt) >= 0)
+    if(request_find(&CUR(a)->req, opt) >= 0)
       y = flow_pill(a, "in command", C_ACCENT, &x, y, width);
     if(!app_option_supported(a, opt))
       y = flow_pill(a, "not in your curl", C_AMBER, &x, y, width);
@@ -400,7 +400,7 @@ void view_docs(app_t *a, struct nk_rect r)
     return;
   }
   o = &g_options[a->doc_opt];
-  in_cmd = request_find(&a->req, a->doc_opt) >= 0;
+  in_cmd = request_find(&CUR(a)->req, a->doc_opt) >= 0;
   flags = in_cmd | (app_option_supported(a, a->doc_opt) ? 2 : 0);
   content_w = r.w - pad * 2 - 6;
 

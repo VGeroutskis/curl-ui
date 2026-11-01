@@ -268,7 +268,7 @@ static void test_args_write_config(void)
   request_set_value(request_add(&r, options_find("data-raw")), 0, "a\"b\\c\nd\te\rf\vg");
   request_set_url(&r, "-http://x/");
   CHECK(builder_build(&r, "curl", &l) == 0);
-  CHECK(args_write_config(&l, path, err, sizeof(err)) == 0);
+  CHECK(args_write_config(&l, path, ARG_CONFIG_LINE_MAX, err, sizeof(err)) == 0);
   got = file_read_all(path, &len, 4096);
   /* --disable stays on the command line, where curl honours it */
   CHECK_STR(got, "--location\n--data-raw \"a\\\"b\\\\c\\nd\\te\\rf\\vg\"\n--url \"-http://x/\"\n");
@@ -279,12 +279,53 @@ static void test_args_write_config(void)
   request_set_value(request_add(&r, options_find("json")), 0, huge);
   CHECK(builder_build(&r, "curl", &l) == 0);
   err[0] = '\0';
-  CHECK(args_write_config(&l, path, err, sizeof(err)) == -1);
+  CHECK(args_write_config(&l, path, ARG_CONFIG_LINE_MAX, err, sizeof(err)) == -1);
   CHECK(strstr(err, "--json") != NULL);
+  /* curl before 8.2 reads far less from one line */
+  CHECK(args_write_config(&l, path, ARG_CONFIG_LINE_OLD, err, sizeof(err)) == -1);
+  CHECK(strstr(err, "0.1 MB") != NULL);
   arg_list_free(&l);
   free(huge);
   request_free(&r);
   remove(path);
+}
+
+static void test_args_spill_bodies(void)
+{
+  request r;
+  arg_list l;
+  arg_files files;
+  char stem[1024], err[256];
+  char *body = filled(ARG_BODY_SPILL + 1, 'b'), *at = filled(ARG_BODY_SPILL + 1, 'c');
+  size_t len = 0;
+  char *got;
+  at[0] = '@';
+  snprintf(stem, sizeof(stem), "%s/run-9-9", g_dir);
+  request_init(&r);
+  request_set_value(request_add(&r, options_find("data-raw")), 0, body);
+  request_set_value(request_add(&r, options_find("json")), 0, body);
+  request_set_value(request_add(&r, options_find("data")), 0, at);   /* a file name already, however odd */
+  request_set_value(request_add(&r, options_find("header")), 0, "X: 1");
+  CHECK(builder_build(&r, "curl", &l) == 0);
+  memset(&files, 0, sizeof(files));
+  CHECK(args_spill_bodies(&l, stem, &files, err, sizeof(err)) == 0);
+  CHECK(files.n == 2);
+  CHECK_STR(l.tok[1].text, "--data-binary");  /* takes the bytes as they are, as --data-raw would */
+  CHECK(l.tok[2].text[0] == '@');
+  CHECK_STR(l.tok[2].text + 1, files.paths[0]);
+  CHECK_STR(l.tok[3].text, "--json");
+  CHECK(l.tok[4].text[0] == '@');
+  CHECK_STR(l.tok[6].text, at);
+  got = file_read_all(files.paths[0], &len, ARG_BODY_SPILL * 2);
+  CHECK(got && len == ARG_BODY_SPILL + 1 && !strcmp(got, body));
+  free(got);
+  args_files_remove(&files);
+  CHECK(files.n == 0);
+  CHECK(file_read_all(stem, &len, 16) == NULL);
+  arg_list_free(&l);
+  request_free(&r);
+  free(body);
+  free(at);
 }
 
 static void test_args_remove_stale(void)
@@ -315,6 +356,7 @@ int main(int argc, char **argv)
   test_request_file_has_no_line_limit();
   test_args_need_file();
   test_args_write_config();
+  test_args_spill_bodies();
   test_args_remove_stale();
   printf("%d checks, %d failed\n", g_checks, g_fail);
   return g_fail ? 1 : 0;

@@ -14,8 +14,8 @@ import tempfile
 import threading
 
 received = []
-FIRST_VALUE_Y = 195  # the value field of the first card, at 1440x900
-RUN_Y = 76            # the Run button
+FIRST_VALUE_Y = 227  # the value field of the first card, at 1440x900
+RUN_Y = 108           # the Run button
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -35,14 +35,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
         pass
 
 
-def run_app(ui, tmp, name, port, value):
+def run_app(ui, tmp, name, port, value, option="data-raw"):
     value_path = os.path.join(tmp, name + ".txt")
     with open(value_path, "wb") as f:
         f.write(value)
     dump = os.path.join(tmp, name + ".dump")
     env = dict(os.environ, SDL_VIDEODRIVER="dummy")
     subprocess.run([ui, "--settings-dir", os.path.join(tmp, "settings"), "--url", "http://127.0.0.1:%d/" % port,
-                    "--add-file", "data-raw=" + value_path, "--run", "--dump", dump,
+                    "--add-file", option + "=" + value_path, "--run", "--dump", dump,
                     "--screenshot", os.path.join(tmp, name + ".bmp")],
                    env=env, check=True, timeout=120)
     with open(dump, encoding="utf-8", errors="replace") as f:
@@ -93,11 +93,17 @@ def main():
                        env=dict(os.environ, SDL_VIDEODRIVER="dummy"), check=True, timeout=120)
         check(len(received) == 1 and received[0] == paste, "pasting %d bytes into a field sends them whole" % len(paste))
 
+        # a body goes through a file of its own, so no size stops it
+        big = b"z" * (11 * 1024 * 1024)
         del received[:]
-        dump = run_app(ui, tmp, "too-big", port, b"z" * (11 * 1024 * 1024))
-        check(not received, "11 MB: curl does not start")
-        check("--data-raw is over the 10 MB" in dump, "11 MB: the log says which option and why")
-        check("@file" in dump, "11 MB: the log says what to do instead")
+        dump = run_app(ui, tmp, "big-body", port, big)
+        check(len(received) == 1 and received[0] == big, "11 MB body reaches the server whole")
+
+        # anything else can only go through a config line, which has a limit
+        del received[:]
+        dump = run_app(ui, tmp, "too-big", port, b"z" * (11 * 1024 * 1024), "header")
+        check(not received, "11 MB header: curl does not start")
+        check("--header is over the" in dump, "11 MB header: the log says which option and why")
         check(not glob.glob(os.path.join(tmp, "settings", "run-*.conf")), "no argument file is left behind")
     server.shutdown()
     print("%d failed" % fails)

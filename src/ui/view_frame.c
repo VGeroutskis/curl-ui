@@ -5,6 +5,7 @@
 #include <string.h>
 
 #define HEADER_H 48.0f
+#define TABS_H 32.0f
 
 extern struct nk_vec2 g_space_origin;
 struct nk_rect center_menu_rect(app_t *a, struct nk_rect center);
@@ -94,9 +95,8 @@ void view_header(app_t *a, struct nk_rect r)
 
 void view_frame(app_t *a)
 {
-  a->big_paste = 0;
   struct nk_context *ctx = a->ctx;
-  float top = HEADER_H;
+  float top = HEADER_H + TABS_H;
   float lib_w = NK_CLAMP(300, a->W * 0.24f, 380);
   float doc_w = NK_CLAMP(340, a->W * 0.29f, 480);
   struct nk_rect full = nk_rect(0, 0, a->W, a->H);
@@ -104,8 +104,9 @@ void view_frame(app_t *a)
   struct nk_input *in = &ctx->input;
   struct nk_vec2 saved_pos = in->mouse.pos;
   struct nk_mouse_button saved_left = in->mouse.buttons[NK_BUTTON_LEFT];
-  int menu_was_open = a->method_menu;
+  int menu_was_open = CUR(a)->method_menu;
 
+  a->big_paste = 0;
   a->cursor = CURSOR_ARROW;
   a->hover_frame = -1;
   a->any_focus = 0;
@@ -115,14 +116,14 @@ void view_frame(app_t *a)
 
   /* The popup goes first and takes the input, so nothing below reacts. */
   if(a->show_settings)
-    a->method_menu = menu_was_open = 0;
+    CUR(a)->method_menu = menu_was_open = 0;
   if(menu_was_open) {
     const struct nk_mouse_button *b = &in->mouse.buttons[NK_BUTTON_LEFT];
     if(b->clicked && !b->down) {
       int item = center_menu_item_at(a, center, in->mouse.pos);
       if(item >= 0)
-        a->method = item;
-      a->method_menu = 0;
+        CUR(a)->method = item;
+      CUR(a)->method_menu = 0;
     }
     in->mouse.pos = nk_vec2(-1000, -1000);
     in->mouse.buttons[NK_BUTTON_LEFT].clicked = 0;
@@ -137,6 +138,7 @@ void view_frame(app_t *a)
     }
     nk_layout_space_begin(ctx, NK_STATIC, a->H, INT_MAX);
     view_header(a, nk_rect(0, 0, a->W, HEADER_H));
+    view_tabs(a, nk_rect(0, HEADER_H, a->W, TABS_H));
     /* draw order is nk_edit identity: fixed edits come before the card list */
     view_library(a, nk_rect(0, top, lib_w, a->H - top));
     if(a->show_settings)
@@ -144,7 +146,7 @@ void view_frame(app_t *a)
     else
       view_center(a, center);
     view_docs(a, nk_rect(a->W - doc_w, top, doc_w, a->H - top));
-    if(menu_was_open && a->method_menu) {
+    if(menu_was_open && CUR(a)->method_menu) {
       in->mouse.pos = saved_pos;
       center_draw_menu(a, center);
     }

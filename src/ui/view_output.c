@@ -195,10 +195,10 @@ void view_output(app_t *a, struct nk_rect r)
   const palette *p = &a->pal;
   struct nk_rect body;
   float x = r.x + 6, adv, right = r.x + r.w - 8, chips_x;
-  int running = a->proc != NULL;
-  int showing_pretty = a->tab == TAB_RESPONSE && a->pretty && a->pretty_valid;
-  outbuf *src = a->tab == TAB_LOG ? a->log : (showing_pretty ? a->pretty_buf : a->out);
-  wrap_cache *wc = a->tab == TAB_LOG ? &a->wrap_log : (showing_pretty ? &a->wrap_pretty : &a->wrap_out);
+  int running = CUR(a)->proc != NULL;
+  int showing_pretty = CUR(a)->out_tab == TAB_RESPONSE && CUR(a)->pretty && CUR(a)->pretty_valid;
+  outbuf *src = CUR(a)->out_tab == TAB_LOG ? CUR(a)->log : (showing_pretty ? CUR(a)->pretty_buf : CUR(a)->out);
+  wrap_cache *wc = CUR(a)->out_tab == TAB_LOG ? &CUR(a)->wrap_log : (showing_pretty ? &CUR(a)->wrap_pretty : &CUR(a)->wrap_out);
   char tmp[64];
   int cols;
   float content;
@@ -206,11 +206,11 @@ void view_output(app_t *a, struct nk_rect r)
   ui_rect(a, r, 7, p->card);
   ui_stroke(a, r, 7, p->border);
 
-  if(draw_tab(a, x, r.y + 1, "Response", a->tab == TAB_RESPONSE, &adv))
-    a->tab = TAB_RESPONSE;
+  if(draw_tab(a, x, r.y + 1, "Response", CUR(a)->out_tab == TAB_RESPONSE, &adv))
+    CUR(a)->out_tab = TAB_RESPONSE;
   x += adv;
-  if(draw_tab(a, x, r.y + 1, "Log", a->tab == TAB_LOG, &adv))
-    a->tab = TAB_LOG;
+  if(draw_tab(a, x, r.y + 1, "Log", CUR(a)->out_tab == TAB_LOG, &adv))
+    CUR(a)->out_tab = TAB_LOG;
   x += adv + 8;
   chips_x = x;
 
@@ -226,23 +226,23 @@ void view_output(app_t *a, struct nk_rect r)
       free(text);
     }
   }
-  if(a->pretty_valid && a->tab == TAB_RESPONSE) {
+  if(CUR(a)->pretty_valid && CUR(a)->out_tab == TAB_RESPONSE) {
     struct nk_rect pr;
     float pw = ui_text_w(a->f.small, "Pretty JSON", 11) + 16;
     int hover;
     right -= pw + 4;
     pr = nk_rect(right, r.y + 6, pw, 20);
     hover = ui_hover(a, pr);
-    ui_rect(a, pr, 10, a->pretty ? p->accent : p->bg);
-    if(!a->pretty)
+    ui_rect(a, pr, 10, CUR(a)->pretty ? p->accent : p->bg);
+    if(!CUR(a)->pretty)
       ui_stroke(a, pr, 10, p->border_strong);
     ui_text(a, a->f.small, pr.x + 8, pr.y + (20 - a->f.small->height) / 2, "Pretty JSON", 11,
-            a->pretty ? p->on_accent : p->dim);
+            CUR(a)->pretty ? p->on_accent : p->dim);
     if(hover)
       a->cursor = CURSOR_HAND;
     if(ui_clicked(a, pr)) {
-      a->pretty = !a->pretty;
-      a->out_scroll = 0;
+      CUR(a)->pretty = !CUR(a)->pretty;
+      CUR(a)->out_scroll = 0;
     }
   }
 
@@ -253,24 +253,24 @@ void view_output(app_t *a, struct nk_rect r)
     float limit = right - 4;
 #define CHIP(fg_) do { float w_ = ui_pill_w(a, tmp); if(chips_x + w_ <= limit) { ui_pill(a, chips_x, cy, tmp, (fg_), p->bg); chips_x += w_ + 4; } } while(0)
     if(running) {
-      snprintf(tmp, sizeof(tmp), "running %.1fs", (double)a->run_secs);
+      snprintf(tmp, sizeof(tmp), "running %.1fs", (double)CUR(a)->run_secs);
       CHIP(p->accent);
     }
-    else if(a->has_result) {
-      if(a->has_stats && a->http_status) {
-        int cls = a->http_status / 100;
+    else if(CUR(a)->has_result) {
+      if(CUR(a)->has_stats && CUR(a)->http_status) {
+        int cls = CUR(a)->http_status / 100;
         fg = cls == 2 ? p->green : (cls == 3 ? p->accent : (cls >= 4 ? p->red : p->dim));
-        snprintf(tmp, sizeof(tmp), "%d", a->http_status);
+        snprintf(tmp, sizeof(tmp), "%d", CUR(a)->http_status);
         CHIP(fg);
       }
-      if(a->exit_code) {
-        snprintf(tmp, sizeof(tmp), "exit %d", a->exit_code);
+      if(CUR(a)->exit_code) {
+        snprintf(tmp, sizeof(tmp), "exit %d", CUR(a)->exit_code);
         CHIP(p->red);
       }
-      snprintf(tmp, sizeof(tmp), "%.0f ms", a->has_stats ? a->curl_time * 1000.0 : (double)a->run_secs * 1000.0);
+      snprintf(tmp, sizeof(tmp), "%.0f ms", CUR(a)->has_stats ? CUR(a)->curl_time * 1000.0 : (double)CUR(a)->run_secs * 1000.0);
       CHIP(p->dim);
-      if(a->has_stats) {
-        format_size(a->curl_size, tmp, sizeof(tmp));
+      if(CUR(a)->has_stats) {
+        format_size(CUR(a)->curl_size, tmp, sizeof(tmp));
         CHIP(p->dim);
       }
     }
@@ -288,36 +288,36 @@ void view_output(app_t *a, struct nk_rect r)
 
   {
     struct nk_rect saved = g_clip;
-    float before = a->out_scroll;
+    float before = CUR(a)->out_scroll;
     ui_push_clip(a, ui_intersect(body, saved));
-    if(ui_wheel(a, body, &a->out_scroll, content, ROW_H * 3)) {
+    if(ui_wheel(a, body, &CUR(a)->out_scroll, content, ROW_H * 3)) {
       /* scrolling up stops following; reaching the end resumes it */
-      if(a->out_scroll < before)
-        a->out_follow = 0;
+      if(CUR(a)->out_scroll < before)
+        CUR(a)->out_follow = 0;
     }
-    if(a->out_scroll + body.h >= content - 1)
-      a->out_follow = 1;
-    if(a->out_follow && (running || a->tab == TAB_LOG))
-      a->out_scroll = content - body.h;
-    ui_clamp_scroll(&a->out_scroll, content, body.h);
+    if(CUR(a)->out_scroll + body.h >= content - 1)
+      CUR(a)->out_follow = 1;
+    if(CUR(a)->out_follow && (running || CUR(a)->out_tab == TAB_LOG))
+      CUR(a)->out_scroll = content - body.h;
+    ui_clamp_scroll(&CUR(a)->out_scroll, content, body.h);
 
     if(!wc->nrows) {
-      if(a->url_missing)
+      if(CUR(a)->url_missing)
         empty_state(a, body, "curl needs a URL to run", "Type it in the bar at the top, then press Run.");
       else if(running)
         empty_state(a, body, "Waiting for the server…", "Output appears here as it arrives.");
-      else if(a->tab == TAB_LOG)
+      else if(CUR(a)->out_tab == TAB_LOG)
         empty_state(a, body, "No transfer log yet", "Every run records what curl sent and received here.");
-      else if(a->has_result)
+      else if(CUR(a)->has_result)
         empty_state(a, body, "The response had no body", "Check the Log tab for the headers and status.");
       else
         empty_state(a, body, "Nothing to show yet", "Enter a URL and press Run, or start from a recipe.");
     }
     else {
-      size_t first = (size_t)(a->out_scroll / ROW_H), i;
-      size_t last = (size_t)((a->out_scroll + body.h) / ROW_H) + 1;
+      size_t first = (size_t)(CUR(a)->out_scroll / ROW_H), i;
+      size_t last = (size_t)((CUR(a)->out_scroll + body.h) / ROW_H) + 1;
       float tx = body.x + 11;
-      float base = body.y + 6 - a->out_scroll;
+      float base = body.y + 6 - CUR(a)->out_scroll;
       outbuf_lock(src);
       for(i = first; i < wc->nrows && i <= last; i++) {
         const wrap_row *row = &wc->rows[i];
@@ -326,9 +326,9 @@ void view_output(app_t *a, struct nk_rect r)
         float y = base + (float)i * ROW_H + (ROW_H - a->f.mono_small->height) / 2;
         if((size_t)row->off + row->len > len)
           continue;
-        if(a->tab == TAB_LOG)
+        if(CUR(a)->out_tab == TAB_LOG)
           ui_text(a, a->f.mono_small, tx, y, line + row->off, (int)row->len, log_color(p, line, len));
-        else if(showing_pretty && row->line >= a->pretty_header_lines)
+        else if(showing_pretty && row->line >= CUR(a)->pretty_header_lines)
           draw_json_row(a, tx, y, row, line, len);
         else
           ui_text(a, a->f.mono_small, tx, y, line + row->off, (int)row->len, p->text);
@@ -338,7 +338,7 @@ void view_output(app_t *a, struct nk_rect r)
         ui_text_fit(a, a->f.small, body.x + 11, body.y + body.h - 20, 18, body.w - 22,
                     "Output cut at 8 MB. Use --output to save everything to a file.", p->amber);
     }
-    ui_scrollbar(a, body, &a->out_scroll, content);
+    ui_scrollbar(a, body, &CUR(a)->out_scroll, content);
     ui_push_clip(a, saved);
   }
 }

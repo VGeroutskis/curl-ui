@@ -66,16 +66,16 @@ static void protocol_label(const opt_def *o, char *out, size_t n)
 static int selected_list(const app_t *a, int *out)
 {
   int i;
-  for(i = 0; i < a->req.nsel; i++)
-    out[i] = a->req.sel[i].opt;
-  return a->req.nsel;
+  for(i = 0; i < CUR(a)->req.nsel; i++)
+    out[i] = CUR(a)->req.sel[i].opt;
+  return CUR(a)->req.nsel;
 }
 
 static void draw_row(app_t *a, struct nk_rect r, int opt, const int *sel, int nsel)
 {
   const palette *p = &a->pal;
   const opt_def *o = &g_options[opt];
-  int added = request_find(&a->req, opt) >= 0;
+  int added = request_find(&CUR(a)->req, opt) >= 0;
   int hover = ui_hover(a, r);
   char flag[128], proto[64], why[128];
   int blocker = -1;
@@ -182,7 +182,7 @@ void view_library(app_t *a, struct nk_rect r)
     a->nhidden = 0;
     for(i = 0; i < a->nresults; i++) {
       int opt = a->results[i];
-      if(a->show_all || request_find(&a->req, opt) >= 0 || options_can_combine(opt, sel, nsel, NULL))
+      if(a->show_all || request_find(&CUR(a)->req, opt) >= 0 || options_can_combine(opt, sel, nsel, NULL))
         a->results[kept++] = opt;
       else
         a->nhidden++;
