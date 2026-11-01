@@ -10,6 +10,50 @@ not included: packages depend on it, and the app uses the one on your system.
 
 ![curl UI: the option library, a request with its exact command and response, and curl's documentation for the option in focus](docs/screenshots/main.png)
 
+## Why use it
+
+- **Your real curl, nothing simulated.** The app starts the `curl` on your system
+  with an argument array and no shell, so a result here is a result from curl.
+- **Every option, documented in place.** All 278 options are searchable, and curl's
+  own documentation appears as you hover over one. No switching to a man page.
+- **Only what can work together.** After each choice the list narrows to the options
+  that still combine with what you picked, and says why the others do not.
+- **A command you can take with you.** The exact command is always on screen, and
+  Copy gives you that text for a script, a CI job, a ticket or your documentation.
+- **Private and local.** No account, no cloud and no telemetry. The app has no
+  network code of its own: every connection is made by curl, when you press Run.
+- **Small and native.** C11, SDL2 and Nuklear, with no browser engine. About a 1 MB
+  download on Windows and macOS, free and open source.
+
+## Who it is for
+
+| You are | It helps you |
+|---|---|
+| A backend or API developer | try an endpoint and see status, time, size and formatted JSON, then keep the command |
+| A QA or support engineer | reproduce a problem and attach the exact command and its log to the report |
+| A DevOps or SRE engineer | check redirects, certificates, proxies and timeouts on the machine in question |
+| Someone learning HTTP or curl | discover options by reading about them, and see what each one really does |
+
+## Use cases
+
+- **Debug an API call.** Start from the *Send JSON* recipe, add your headers, and run.
+  The Response tab formats the JSON, and the Log tab shows what was sent and received.
+- **Find out why HTTPS fails.** Add `--cacert`, `--resolve` or `--tlsv1.2`, and read the
+  handshake in the Log tab, with the documentation for each option beside it.
+- **Test through a proxy.** Pick the *Proxy* filter, add `--proxy` and its authentication
+  options, and compare the result with a direct request.
+- **Write a command for a script.** Build it with `--retry`, `--connect-timeout` and
+  `--max-time`, confirm that it works, and copy it into your CI job.
+- **Transfer files.** Download with `--remote-name` and `--limit-rate`, resume with
+  `--continue-at`, or upload with `--upload-file`, over HTTP, FTP and the other
+  protocols your curl supports.
+
+## When something else fits better
+
+curl UI runs one request at a time. It has no saved collections, shared team
+workspaces, test suites or import from a pasted command, so a full API client suits
+that work better. For repeated automation, use the copied command directly.
+
 ## Install
 
 Download from the [releases page](../../releases), where `SHA256SUMS` lists the
@@ -55,9 +99,19 @@ yourself. The Log says so on its first line, and they are not in the command you
 copy. The rest of the command is exactly what is executed, as an argument array
 with no shell. This can be turned off in Settings.
 
+### Screenshots
+
 | Only what combines, or everything with the reason | The verbose log, in the light theme |
 |---|---|
 | ![The option list with Show all on, marking options that do not combine with --http2](docs/screenshots/combine.png) | ![The Log tab of a finished request in the light theme](docs/screenshots/light-log.png) |
+
+| Recipes to start from | Options filtered by topic |
+|---|---|
+| ![Recipe cards such as Fetch JSON, Send JSON and Debug a request](docs/screenshots/recipes.png) | ![The Proxy filter with --proxy added and its documentation open](docs/screenshots/proxy.png) |
+
+| Settings | Guidance instead of a cryptic error |
+|---|---|
+| ![The Settings page with theme, text size, curl program and behaviour](docs/screenshots/settings.png) | ![A request without a URL: the URL bar is highlighted and the app explains what is missing](docs/screenshots/missing-url.png) |
 
 ## Settings
 
