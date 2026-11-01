@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=curl UI
+Comment=A desktop front end for curl: all of its options, explained
+Exec=curl-ui
+Icon=curl-ui
+Terminal=false
+Categories=Network;Development;

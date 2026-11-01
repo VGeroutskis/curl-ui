@@ -93,6 +93,9 @@ static int match_link(const char *s, const char *start, int *opt)
   while(n > 2 && (s[n - 1] == '.' || s[n - 1] == '-'))
     n--;  /* sentence punctuation */
   *opt = options_find_n(s + 2, n - 2);
+  /* --no-foo is documented under --foo */
+  if(*opt < 0 && n > 5 && !strncmp(s + 2, "no-", 3))
+    *opt = options_find_n(s + 5, n - 5);
   return *opt >= 0 ? n : 0;
 }
 
