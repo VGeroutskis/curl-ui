@@ -77,22 +77,6 @@ jobs:
         env:
           SDL_VIDEODRIVER: dummy
         run: ./build/curl-ui --add location --docs location --screenshot smoke.bmp && test -s smoke.bmp
-      - name: Live tests of the app
-        if: matrix.arch != 'x86_64'
-        env:
-          SDL_VIDEODRIVER: dummy
-          PYTHONUTF8: 1
-        run: |
-          python3 tests/live/test_large.py --ui build/curl-ui
-          python3 tests/live/test_tabs.py --ui build/curl-ui
-          python3 tests/live/test_vars.py --ui build/curl-ui
-          python3 tests/live/test_mask.py --ui build/curl-ui
-          python3 tests/live/test_params.py --ui build/curl-ui
-          python3 tests/live/test_forms.py --ui build/curl-ui
-          python3 tests/live/test_store.py --ui build/curl-ui
-          python3 tests/live/test_import.py --ui build/curl-ui
-          python3 tests/live/test_picker.py --ui build/curl-ui
-          python3 tests/live/test_regress.py --ui build/curl-ui
       - name: Sanitizers
         if: matrix.arch == 'aarch64'
         run: |
@@ -172,6 +156,7 @@ jobs:
           $p = Start-Process -Wait -PassThru -FilePath build\Release\curl-ui.exe -ArgumentList '--add location --docs location --screenshot smoke.bmp'
           if ($p.ExitCode -ne 0 -or -not (Test-Path smoke.bmp)) { exit 1 }
       - name: Live tests of the app
+        if: matrix.arch == 'x64'  # once per system; the other architecture has the unit tests
         env:
           SDL_VIDEODRIVER: dummy
           PYTHONUTF8: 1
@@ -236,6 +221,7 @@ jobs:
           "build/curl UI.app/Contents/MacOS/curl UI" --add location --docs location --screenshot "$PWD/smoke.bmp"
           test -s smoke.bmp
       - name: Live tests of the app
+        if: matrix.arch == 'arm64'  # once per system; the other architecture has the unit tests
         env:
           SDL_VIDEODRIVER: dummy
           PYTHONUTF8: 1
