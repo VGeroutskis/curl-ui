@@ -1,6 +1,8 @@
 #include "app.h"
 
 #include <SDL.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 struct nk_rect g_clip;
@@ -249,6 +251,88 @@ nk_flags ui_edit(app_t *a, struct nk_rect r, char *buf, int cap, const char *pla
     ui_text_fit(a, font, r.x + 9, r.y, r.h, r.w - 16, placeholder, p->faint);
   if(ui_hover(a, r))
     a->cursor = CURSOR_IBEAM;
+  return state;
+}
+
+static void paste_or_defer(nk_handle usr, struct nk_text_edit *edit)
+{
+  app_t *a = usr.ptr;
+  char *text = SDL_GetClipboardText();
+  if(text) {
+    if(strlen(text) > FIELD_EDIT_MAX)
+      a->big_paste = 1;
+    else
+      nk_textedit_paste(edit, text, nk_strlen(text));
+    SDL_free(text);
+  }
+}
+
+void ui_install_paste(app_t *a)
+{
+  a->ctx->clip.paste = paste_or_defer;
+  a->ctx->clip.userdata = nk_handle_ptr(a);
+}
+
+static int reserve(char **buf, size_t *cap, size_t want)
+{
+  char *grown;
+  if(want <= *cap)
+    return 0;
+  grown = realloc(*buf, want);
+  if(!grown)
+    return -1;
+  *buf = grown;
+  *cap = want;
+  return 0;
+}
+
+/* Puts the clipboard at the end of buf, or over it. */
+static void take_clipboard(char **buf, size_t *cap, int replace)
+{
+  char *text = SDL_GetClipboardText();
+  if(text) {
+    size_t have = replace ? 0 : strlen(*buf), n = strlen(text);
+    if(!reserve(buf, cap, have + n + 1))
+      memcpy(*buf + have, text, n + 1);
+    SDL_free(text);
+  }
+}
+
+static void draw_large_value(app_t *a, struct nk_rect r, char **buf, size_t *cap, size_t len)
+{
+  const palette *p = &a->pal;
+  char label[64];
+  float bh = r.h - 6;
+  struct nk_rect clear = nk_rect(r.x + r.w - 53, r.y + 3, 50, bh);
+  struct nk_rect replace = nk_rect(clear.x - 164, r.y + 3, 160, bh);
+  if(len >= 1048576)
+    snprintf(label, sizeof(label), "%.1f MB of text", (double)len / 1048576.0);
+  else
+    snprintf(label, sizeof(label), "%u KB of text", (unsigned)(len / 1024));
+  ui_rect(a, r, 5, p->field);
+  ui_stroke(a, r, 5, p->border);
+  ui_text_fit(a, a->f.small, r.x + 9, r.y, r.h, r.w - 240, label, p->dim);
+  if(ui_button(a, replace, "Replace from clipboard", BTN_SECONDARY))
+    take_clipboard(buf, cap, 1);
+  if(ui_button(a, clear, "Clear", BTN_SECONDARY))
+    (*buf)[0] = '\0';
+}
+
+nk_flags ui_edit_dyn(app_t *a, struct nk_rect r, char **buf, size_t *cap, const char *placeholder,
+                     const struct nk_user_font *font, nk_flags extra)
+{
+  size_t len = strlen(*buf);
+  nk_flags state;
+  if(len > FIELD_EDIT_MAX) {
+    draw_large_value(a, r, buf, cap, len);
+    return 0;
+  }
+  reserve(buf, cap, len + FIELD_EDIT_MAX + 4096);
+  state = ui_edit(a, r, *buf, (int)*cap, placeholder, font, extra);
+  if(a->big_paste && (state & NK_EDIT_ACTIVE)) {
+    take_clipboard(buf, cap, 0);
+    a->big_paste = 0;
+  }
   return state;
 }
 

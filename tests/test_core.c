@@ -125,7 +125,7 @@ static void test_builder(void)
   const char **argv;
 
   request_init(&r);
-  snprintf(r.url, sizeof(r.url), "https://example.com/?a=1&b=2");
+  request_set_url(&r, "https://example.com/?a=1&b=2");
   CHECK(builder_build(&r, "curl", &l) == 0);
   prev = builder_preview(&l);
   CHECK_STR(prev, "curl 'https://example.com/?a=1&b=2'");
@@ -134,8 +134,8 @@ static void test_builder(void)
 
   snprintf(r.method, sizeof(r.method), "POST");
   s = request_add(&r, options_find("header"));
-  snprintf(s->values[0], BUILDER_VALUE_CAP, "X-A: it's");
-  snprintf(request_add_value(s), BUILDER_VALUE_CAP, "X-B: 2");
+  request_set_value(s, 0, "X-A: it's");
+  request_append_value(s, "X-B: 2");
   request_add_value(s);  /* empty: unfinished, left out */
   request_add(&r, options_find("location"));
   request_add(&r, options_find("compressed"));
@@ -163,7 +163,7 @@ static void test_builder(void)
 
   /* an explicit --request wins over the method combo */
   s = request_add(&r, options_find("request"));
-  snprintf(s->values[0], BUILDER_VALUE_CAP, "PUT");
+  request_set_value(s, 0, "PUT");
   CHECK(builder_build(&r, "curl", &l) == 0);
   prev = builder_preview(&l);
   CHECK(strstr(prev, "-X POST") == NULL);
@@ -174,7 +174,7 @@ static void test_builder(void)
   request_clear_options(&r);
   CHECK(r.nsel == 0);
   snprintf(r.method, sizeof(r.method), "HEAD");
-  snprintf(r.url, sizeof(r.url), "-weird");
+  request_set_url(&r, "-weird");
   CHECK(builder_build(&r, "curl", &l) == 0);
   prev = builder_preview(&l);
   CHECK_STR(prev, "curl --head --url -weird");
@@ -208,11 +208,11 @@ static void test_url_checks(void)
   request_init(&r);
   CHECK(request_lacks_url(&r));
   s = request_add(&r, options_find("abstract-unix-socket"));
-  snprintf(s->values[0], BUILDER_VALUE_CAP, "https://examples.com");
+  request_set_value(s, 0, "https://examples.com");
   CHECK(request_lacks_url(&r));
   s = request_add(&r, options_find("url"));
   CHECK(request_lacks_url(&r));  /* --url with no value yet */
-  snprintf(s->values[0], BUILDER_VALUE_CAP, "http://x/");
+  request_set_value(s, 0, "http://x/");
   CHECK(!request_lacks_url(&r));
   request_clear_options(&r);
   request_add(&r, options_find("version"));
@@ -222,7 +222,7 @@ static void test_url_checks(void)
   request_add(&r, options_find("dump-ca-embed"));
   CHECK(!request_lacks_url(&r));
   request_clear_options(&r);
-  snprintf(request_add(&r, options_find("engine"))->values[0], BUILDER_VALUE_CAP, "list");
+  request_set_value(request_add(&r, options_find("engine")), 0, "list");
   CHECK(!request_lacks_url(&r));
   request_clear_options(&r);
   request_add(&r, options_find("help"));  /* its value is optional */
@@ -231,7 +231,7 @@ static void test_url_checks(void)
   r.config_file = "my.conf";
   CHECK(!request_lacks_url(&r));
   r.config_file = NULL;
-  snprintf(r.url, sizeof(r.url), "http://x/");
+  request_set_url(&r, "http://x/");
   CHECK(!request_lacks_url(&r));
   request_free(&r);
 
@@ -837,9 +837,9 @@ static void test_settings(void)
 
   /* the request round trip */
   request_init(&r);
-  snprintf(r.url, sizeof(r.url), "https://example.com/a b");
-  snprintf(request_add(&r, options_find("header"))->values[0], BUILDER_VALUE_CAP, "X-A: 1");
-  snprintf(request_add_value(request_add(&r, options_find("header"))), BUILDER_VALUE_CAP, "X: two\nlines\\");
+  request_set_url(&r, "https://example.com/a b");
+  request_set_value(request_add(&r, options_find("header")), 0, "X-A: 1");
+  request_append_value(request_add(&r, options_find("header")), "X: two\nlines\\");
   request_add(&r, options_find("location"))->negated = 1;
   request_add(&r, options_find("referer"));
   CHECK(request_save(&r, 2, rpath) == 0);
@@ -873,7 +873,7 @@ static void test_settings(void)
 
   /* --disable must be first or curl ignores it, and --config follows it */
   request_init(&r);
-  snprintf(r.url, sizeof(r.url), "http://x/");
+  request_set_url(&r, "http://x/");
   request_add(&r, options_find("location"));
   request_add(&r, options_find("disable"));
   r.config_file = "my.conf";
@@ -948,7 +948,7 @@ static void test_e2e(void)
       enc[n++] = c;
   }
   enc[n] = 0;
-  snprintf(r.url, sizeof(r.url), "%s", enc);
+  request_set_url(&r, enc);
   request_add(&r, options_find("silent"));
   CHECK(builder_build(&r, g_curl, &l) == 0);
   argv = arg_list_argv(&l, NULL);

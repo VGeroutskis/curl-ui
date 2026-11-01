@@ -2,8 +2,12 @@
 #ifndef _WIN32
 #define _POSIX_C_SOURCE 200809L
 #endif
+#include "argfile.h"
+#include "builder.h"
 #include "fileio.h"
 #include "json.h"
+#include "options.h"
+#include "settings.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -168,6 +172,138 @@ static void test_file_private(void)
   remove(moved);
 }
 
+static char *filled(size_t n, char c)
+{
+  char *s = malloc(n + 1);
+  memset(s, c, n);
+  s[n] = '\0';
+  return s;
+}
+
+static void test_values_have_no_size_limit(void)
+{
+  request r;
+  arg_list l;
+  sel_option *s;
+  size_t big = 5u * 1024 * 1024;
+  char *text = filled(big, 'x'), *url = filled(100000, 'u');
+  int i, found = 0;
+  request_init(&r);
+  CHECK(r.url != NULL && r.url[0] == '\0');
+  s = request_add(&r, options_find("data"));
+  CHECK(request_set_value(s, 0, text) != NULL);
+  CHECK(strlen(s->values[0]) == big);
+  CHECK(request_append_value(s, "second") != NULL);
+  CHECK_STR(s->values[1], "second");
+  CHECK(request_set_url(&r, url) == 0);
+  CHECK(strlen(r.url) == 100000);
+  CHECK(builder_build(&r, "curl", &l) == 0);
+  for(i = 0; i < l.count; i++)
+    if(l.tok[i].kind == TOK_VALUE && strlen(l.tok[i].text) == big)
+      found = 1;
+  CHECK(found);
+  CHECK(strlen(l.tok[l.count - 1].text) == 100000);
+  arg_list_free(&l);
+  /* shrinking leaves it usable, and a value can be cleared */
+  CHECK(request_set_value(s, 0, "") != NULL);
+  CHECK(s->values[0][0] == '\0');
+  request_free(&r);
+  free(text);
+  free(url);
+}
+
+static void test_request_file_has_no_line_limit(void)
+{
+  char path[1024];
+  request a, b;
+  int method = 0;
+  size_t big = 5u * 1024 * 1024;
+  char *text = filled(big, 'y');
+  snprintf(path, sizeof(path), "%s/big-request.txt", g_dir);
+  request_init(&a);
+  request_init(&b);
+  request_set_url(&a, "http://x/");
+  request_set_value(request_add(&a, options_find("data")), 0, text);
+  CHECK(request_save(&a, 0, path) == 0);
+  CHECK(request_load(&b, &method, path) == 1);
+  CHECK(b.nsel == 1 && strlen(b.sel[0].values[0]) == big);
+  CHECK_STR(b.url, "http://x/");
+  request_free(&a);
+  request_free(&b);
+  remove(path);
+  free(text);
+}
+
+static void test_args_need_file(void)
+{
+  char *small = filled(99000, 'a'), *large = filled(101000, 'a'), *part = filled(50000, 'a');
+  const char *one_small[] = { "curl", "--data", small, NULL };
+  const char *one_large[] = { "curl", "--data", large, NULL };
+  const char *many[] = { "curl", part, part, part, part, part, NULL };
+  const char *tiny[] = { "curl", "--data", "x", NULL };
+  CHECK(!args_need_file(tiny));
+  CHECK(args_need_file(one_large));
+  CHECK(args_need_file(many));
+#ifdef _WIN32
+  CHECK(args_need_file(one_small));  /* the command line limit comes first */
+#else
+  CHECK(!args_need_file(one_small));
+#endif
+  free(small);
+  free(large);
+  free(part);
+}
+
+static void test_args_write_config(void)
+{
+  request r;
+  arg_list l;
+  char path[1024], err[256];
+  size_t len = 0;
+  char *got, *huge;
+  snprintf(path, sizeof(path), "%s/run.conf", g_dir);
+  request_init(&r);
+  request_add(&r, options_find("disable"));
+  request_add(&r, options_find("location"));
+  request_set_value(request_add(&r, options_find("data-raw")), 0, "a\"b\\c\nd\te\rf\vg");
+  request_set_url(&r, "-http://x/");
+  CHECK(builder_build(&r, "curl", &l) == 0);
+  CHECK(args_write_config(&l, path, err, sizeof(err)) == 0);
+  got = file_read_all(path, &len, 4096);
+  /* --disable stays on the command line, where curl honours it */
+  CHECK_STR(got, "--location\n--data-raw \"a\\\"b\\\\c\\nd\\te\\rf\\vg\"\n--url \"-http://x/\"\n");
+  free(got);
+  arg_list_free(&l);
+  /* over what curl reads from one config line: refused, naming the option */
+  huge = filled(ARG_CONFIG_LINE_MAX + 1, 'z');
+  request_set_value(request_add(&r, options_find("json")), 0, huge);
+  CHECK(builder_build(&r, "curl", &l) == 0);
+  err[0] = '\0';
+  CHECK(args_write_config(&l, path, err, sizeof(err)) == -1);
+  CHECK(strstr(err, "--json") != NULL);
+  arg_list_free(&l);
+  free(huge);
+  request_free(&r);
+  remove(path);
+}
+
+static void test_args_remove_stale(void)
+{
+  char a[1024], b[1024];
+  size_t len;
+  char *got;
+  snprintf(a, sizeof(a), "%s/run-1-2.conf", g_dir);
+  snprintf(b, sizeof(b), "%s/keep.conf", g_dir);
+  file_write_private(a, "x", 1);
+  file_write_private(b, "y", 1);
+  args_remove_stale(g_dir);
+  CHECK(file_read_all(a, &len, 16) == NULL);
+  got = file_read_all(b, &len, 16);
+  CHECK(got != NULL);
+  free(got);
+  remove(b);
+}
+
 int main(int argc, char **argv)
 {
   g_dir = argc > 1 ? argv[1] : ".";
@@ -175,6 +311,11 @@ int main(int argc, char **argv)
   test_jv_rejects();
   test_jv_build();
   test_file_private();
+  test_values_have_no_size_limit();
+  test_request_file_has_no_line_limit();
+  test_args_need_file();
+  test_args_write_config();
+  test_args_remove_stale();
   printf("%d checks, %d failed\n", g_checks, g_fail);
   return g_fail ? 1 : 0;
 }

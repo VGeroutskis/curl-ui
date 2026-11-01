@@ -5,9 +5,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+#define VALUE_START 256u
+
 void request_init(request *r)
 {
   memset(r, 0, sizeof(*r));
+  r->url_cap = VALUE_START;
+  r->url = calloc(1, r->url_cap);
 }
 
 static void sel_free(sel_option *s)
@@ -16,7 +20,9 @@ static void sel_free(sel_option *s)
   for(i = 0; i < s->nvalues; i++)
     free(s->values[i]);
   free(s->values);
+  free(s->caps);
   s->values = NULL;
+  s->caps = NULL;
   s->nvalues = 0;
 }
 
@@ -34,6 +40,9 @@ void request_free(request *r)
   free(r->sel);
   r->sel = NULL;
   r->capsel = 0;
+  free(r->url);
+  r->url = NULL;
+  r->url_cap = 0;
 }
 
 int request_find(const request *r, int opt)
@@ -48,13 +57,19 @@ int request_find(const request *r, int opt)
 char *request_add_value(sel_option *s)
 {
   char **grown = realloc(s->values, sizeof(char *) * (size_t)(s->nvalues + 1));
+  size_t *caps;
   char *value;
   if(!grown)
     return NULL;
   s->values = grown;
-  value = calloc(1, BUILDER_VALUE_CAP);
+  caps = realloc(s->caps, sizeof(size_t) * (size_t)(s->nvalues + 1));
+  if(!caps)
+    return NULL;
+  s->caps = caps;
+  value = calloc(1, VALUE_START);
   if(!value)
     return NULL;
+  s->caps[s->nvalues] = VALUE_START;
   s->values[s->nvalues++] = value;
   return value;
 }
@@ -66,7 +81,46 @@ void request_remove_value(sel_option *s, int index)
   free(s->values[index]);
   memmove(&s->values[index], &s->values[index + 1],
           sizeof(char *) * (size_t)(s->nvalues - index - 1));
+  memmove(&s->caps[index], &s->caps[index + 1],
+          sizeof(size_t) * (size_t)(s->nvalues - index - 1));
   s->nvalues--;
+}
+
+char *request_set_value(sel_option *s, int index, const char *text)
+{
+  size_t n = strlen(text) + 1;
+  if(index < 0 || index >= s->nvalues)
+    return NULL;
+  if(n > s->caps[index]) {
+    char *grown = realloc(s->values[index], n);
+    if(!grown)
+      return NULL;
+    s->values[index] = grown;
+    s->caps[index] = n;
+  }
+  memcpy(s->values[index], text, n);
+  return s->values[index];
+}
+
+char *request_append_value(sel_option *s, const char *text)
+{
+  if(!request_add_value(s))
+    return NULL;
+  return request_set_value(s, s->nvalues - 1, text);
+}
+
+int request_set_url(request *r, const char *url)
+{
+  size_t n = strlen(url) + 1;
+  if(n > r->url_cap) {
+    char *grown = realloc(r->url, n);
+    if(!grown)
+      return -1;
+    r->url = grown;
+    r->url_cap = n;
+  }
+  memcpy(r->url, url, n);
+  return 0;
 }
 
 sel_option *request_add(request *r, int opt)

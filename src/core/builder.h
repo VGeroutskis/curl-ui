@@ -5,19 +5,18 @@
 
 #include <stddef.h>
 
-#define BUILDER_VALUE_CAP 16384
-#define BUILDER_URL_CAP 8192
-
 typedef struct {
   int opt;          /* index into g_options */
   int negated;      /* emit the --no-x form */
-  char **values;    /* each a BUILDER_VALUE_CAP buffer the UI edits in place */
+  char **values;    /* each a buffer the UI edits in place, grown as needed */
+  size_t *caps;     /* the size of each */
   int nvalues;
 } sel_option;
 
 typedef struct {
   char method[16];  /* "" = let curl decide; HEAD maps to --head */
-  char url[BUILDER_URL_CAP];
+  char *url;        /* never NULL after request_init */
+  size_t url_cap;
   int no_curlrc;            /* --disable, which curl only honours first */
   const char *config_file;  /* --config on every run, or NULL */
   sel_option *sel;
@@ -33,6 +32,10 @@ sel_option *request_add(request *r, int opt); /* existing slot if present */
 void request_remove(request *r, int opt);
 char *request_add_value(sel_option *s);       /* a new empty value buffer */
 void request_remove_value(sel_option *s, int index);
+/* Copies text in, growing the buffer. Returns it, or NULL when out of memory. */
+char *request_set_value(sel_option *s, int index, const char *text);
+char *request_append_value(sel_option *s, const char *text);
+int request_set_url(request *r, const char *url);
 
 typedef enum {
   TOK_PROGRAM,

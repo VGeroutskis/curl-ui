@@ -126,10 +126,10 @@ static void check_argv(const char *echoargs)
         sel_option *s;
         request_init(&r);
         s = request_add(&r, i);
-        snprintf(s->values[0], BUILDER_VALUE_CAP, "%s", hard[h]);
+        request_set_value(s, 0, hard[h]);
         if(o->repeatable)
-          snprintf(request_add_value(s), BUILDER_VALUE_CAP, "second %s", hard[h]);
-        snprintf(r.url, sizeof(r.url), "http://u/");
+          { char second[4096]; snprintf(second, sizeof(second), "second %s", hard[h]); request_append_value(s, second); }
+        request_set_url(&r, "http://u/");
         builder_build(&r, echoargs, &l);
         argv = arg_list_argv(&l, NULL);
         snprintf(flag, sizeof(flag), "--%s", o->name);
@@ -154,7 +154,7 @@ static void check_argv(const char *echoargs)
       request_init(&r);
       s = request_add(&r, i);
       s->negated = h;
-      snprintf(r.url, sizeof(r.url), "http://u/");
+      request_set_url(&r, "http://u/");
       builder_build(&r, echoargs, &l);
       argv = arg_list_argv(&l, NULL);
       snprintf(want, sizeof(want), "[--%s]\n[http://u/]\n", h ? o->neg : o->name);

@@ -87,6 +87,7 @@ typedef struct {
   int wants_timer;      /* something is waiting on the clock */
   int any_focus;
   int pending_unfocus;  /* actions run outside the window; applied in the next */
+  int big_paste;        /* the focused field was asked to take a paste too big to edit */
   int quit;
 
   /* model */
@@ -131,6 +132,7 @@ typedef struct {
 
   /* run */
   proc_t *proc;
+  char run_conf[SETTINGS_PATH_CAP + 64];  /* the arguments, when too long for a command line */
   outbuf *out, *log, *pretty_buf;
   unsigned long run_started;
   float run_secs;
@@ -225,6 +227,13 @@ void ui_clamp_scroll(float *scroll, float content, float view);
 int ui_wheel(app_t *a, struct nk_rect r, float *scroll, float content, float step);
 nk_flags ui_edit(app_t *a, struct nk_rect r, char *buf, int cap, const char *placeholder,
                  const struct nk_user_font *font, nk_flags extra);
+/* The same over a growing buffer: room for the text, what is typed in a frame, and a paste. */
+nk_flags ui_edit_dyn(app_t *a, struct nk_rect r, char **buf, size_t *cap, const char *placeholder,
+                     const struct nk_user_font *font, nk_flags extra);
+/* Text past this is not edited in place: Nuklear lays out every character each frame,
+   and a focused field past about 16000 glyphs overflows its 16-bit vertex indices. */
+#define FIELD_EDIT_MAX 8192u
+void ui_install_paste(app_t *a);
 void ui_hover_doc(app_t *a, int opt);
 size_t utf8_next(const char *s, size_t len, size_t i);
 void ui_copy(const char *text);

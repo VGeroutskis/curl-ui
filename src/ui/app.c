@@ -1,7 +1,13 @@
 #include "app.h"
+#include "argfile.h"
 #include "json_fmt.h"
 
 #include <SDL.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -83,8 +89,12 @@ void app_init(app_t *a)
 
 void app_free(app_t *a)
 {
-  proc_free(a->proc);
-  a->proc = NULL;
+  if(a->proc) {
+    proc_free(a->proc);
+    a->proc = NULL;
+  }
+  if(a->run_conf[0])
+    remove(a->run_conf);
   arg_list_free(&a->args);
   request_free(&a->req);
   curlinfo_free(&a->curl);
@@ -128,15 +138,14 @@ void app_add_option(app_t *a, const char *name, const char *value)
     return;
   s = request_add(&a->req, opt);
   if(s && value && g_options[opt].arg[0]) {
-    char *slot = NULL;
-    int i;
-    for(i = 0; i < s->nvalues && !slot; i++)
+    int i, slot = -1;
+    for(i = 0; i < s->nvalues && slot < 0; i++)
       if(!s->values[i][0])
-        slot = s->values[i];
-    if(!slot)
-      slot = request_add_value(s);
-    if(slot)
-      snprintf(slot, BUILDER_VALUE_CAP, "%s", value);
+        slot = i;
+    if(slot >= 0)
+      request_set_value(s, slot, value);
+    else
+      request_append_value(s, value);
   }
 }
 
@@ -156,7 +165,7 @@ void app_apply_recipe(app_t *a, int index)
   int i;
   request_clear_options(&a->req);
   a->method = 0;
-  snprintf(a->req.url, sizeof(a->req.url), "%s", r->url);
+  request_set_url(&a->req, r->url);
   for(i = 0; i < 5 && r->opts[i].name; i++)
     app_add_option(a, r->opts[i].name, r->opts[i].value);
   a->show_recipes = 0;
@@ -187,6 +196,45 @@ static void on_err(void *user, const char *data, size_t len)
 {
   app_t *a = user;
   outbuf_append(a->log, data, len);
+}
+
+static void run_conf_remove(app_t *a)
+{
+  if(a->run_conf[0]) {
+    remove(a->run_conf);
+    a->run_conf[0] = '\0';
+  }
+}
+
+/* Next to the settings, or in the system's temporary folder for a scripted run. */
+static void run_conf_path(app_t *a)
+{
+  static unsigned counter;
+  char dir[SETTINGS_PATH_CAP];
+  const char *slash;
+  size_t n = 0;
+  unsigned pid;
+#ifdef _WIN32
+  pid = (unsigned)GetCurrentProcessId();
+#else
+  pid = (unsigned)getpid();
+#endif
+  slash = strrchr(a->settings_path, '/');
+#ifdef _WIN32
+  if(!slash)
+    slash = strrchr(a->settings_path, '\\');
+#endif
+  if(a->settings_path[0] && slash) {
+    n = (size_t)(slash - a->settings_path);
+    snprintf(dir, sizeof(dir), "%.*s", (int)n, a->settings_path);
+  }
+  else {
+    const char *t = getenv("TMPDIR");
+    if(!t)
+      t = getenv("TEMP");
+    snprintf(dir, sizeof(dir), "%s", t ? t : "/tmp");
+  }
+  snprintf(a->run_conf, sizeof(a->run_conf), "%s/run-%u-%u.conf", dir, pid, ++counter);
 }
 
 void app_run(app_t *a)
@@ -238,6 +286,36 @@ void app_run(app_t *a)
   argv = arg_list_argv(&a->args, extra);
   if(!argv)
     return;
+  if(args_need_file(argv)) {
+    /* too long for a command line: curl reads them from a private file instead */
+    const char *short_argv[16];
+    int m = 0, k;
+    free((void *)argv);
+    run_conf_path(a);
+    if(args_write_config(&a->args, a->run_conf, err, sizeof(err))) {
+      char line[900];
+      int len = snprintf(line, sizeof(line), "curl UI: %s. To send more, use an option's @file form, "
+                         "such as --data-binary @file, so that curl reads the file itself.\n", err);
+      outbuf_append(a->log, line, (size_t)len);
+      a->run_conf[0] = '\0';
+      a->tab = TAB_LOG;
+      a->has_result = 1;
+      a->exit_code = 2;
+      return;
+    }
+    short_argv[m++] = a->args.tok[0].text;
+    if(a->args.count > 1 && a->args.tok[1].opt == options_find("disable") && a->args.tok[1].kind == TOK_FLAG)
+      short_argv[m++] = a->args.tok[1].text;
+    short_argv[m++] = "--config";
+    short_argv[m++] = a->run_conf;
+    for(k = 0; k < n; k++)
+      short_argv[m++] = extra[k];
+    short_argv[m] = NULL;
+    argv = malloc(sizeof(short_argv));
+    if(!argv)
+      return;
+    memcpy((void *)argv, short_argv, sizeof(short_argv));
+  }
   if(note_n) {
     char line[320];
     int len = snprintf(line, sizeof(line), "* curl UI also passed%s, to fill this tab and the status chips\n", note);
@@ -309,6 +387,7 @@ void app_poll(app_t *a)
   a->exit_code = proc_wait(a->proc);
   proc_free(a->proc);
   a->proc = NULL;
+  run_conf_remove(a);
   a->has_result = 1;
   if(outbuf_get_marker(a->log, marker, sizeof(marker))) {
     if(sscanf(marker, "http=%d time=%lf size=%lld", &a->http_status, &a->curl_time, &a->curl_size) == 3)
@@ -382,7 +461,7 @@ void app_apply_actions(app_t *a)
       slot = request_find(&a->req, act->a);
       if(slot >= 0 && act->b < a->req.sel[slot].nvalues) {
         char *v = a->req.sel[slot].values[act->b];
-        snprintf(a->req.url, sizeof(a->req.url), "%s", v);
+        request_set_url(&a->req, v);
         v[0] = '\0';
       }
       a->url_missing = 0;

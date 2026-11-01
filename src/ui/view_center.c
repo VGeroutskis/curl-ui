@@ -205,7 +205,7 @@ static void draw_card(app_t *a, struct nk_rect r, sel_option *s)
       nk_flags st;
       if(o->repeatable && s->nvalues > 1)
         fw -= 28;
-      st = ui_edit(a, nk_rect(x, y, fw, FIELD_H), s->values[j], BUILDER_VALUE_CAP, o->placeholder,
+      st = ui_edit_dyn(a, nk_rect(x, y, fw, FIELD_H), &s->values[j], &s->caps[j], o->placeholder,
                    a->f.mono_small, 0);
       if(st & NK_EDIT_ACTIVE)
         a->cards_focus = 1;
@@ -349,6 +349,39 @@ static struct nk_color token_color(const palette *p, tok_kind k)
   return p->text;
 }
 
+#define CMD_SHOW_MAX 2000u
+
+/* What to draw for a token. A very long value is cut with its size: quoting and
+   measuring all of it every frame would stall the window. Copy still has it all. */
+static char *token_preview(const char *text)
+{
+  size_t n = strlen(text), cut = CMD_SHOW_MAX, qn;
+  char *head, *q, *out;
+  if(n <= CMD_SHOW_MAX)
+    return shell_quote(text);
+  while(cut && ((unsigned char)text[cut] & 0xC0) == 0x80)
+    cut--;
+  head = malloc(cut + 1);
+  if(!head)
+    return NULL;
+  memcpy(head, text, cut);
+  head[cut] = '\0';
+  q = shell_quote(head);
+  free(head);
+  if(!q)
+    return NULL;
+  qn = strlen(q);
+  out = malloc(qn + 64);
+  if(out) {
+    if(n >= 1048576)
+      snprintf(out, qn + 64, "%s... (%.1f MB in all)", q, (double)n / 1048576.0);
+    else
+      snprintf(out, qn + 64, "%s... (%u KB in all)", q, (unsigned)(n / 1024));
+  }
+  free(q);
+  return out;
+}
+
 /* Flows the tokens; returns the rows used. With draw set it also paints them
    and drives the docs panel from the flag under the mouse. */
 static int layout_command(app_t *a, float x0, float y0, float w, int draw)
@@ -361,7 +394,7 @@ static int layout_command(app_t *a, float x0, float y0, float w, int draw)
     cols = 10;
   for(i = 0; i < a->args.count; i++) {
     const arg_token *t = &a->args.tok[i];
-    char *q = shell_quote(t->text);
+    char *q = token_preview(t->text);
     size_t len, off = 0;
     int glyphs = 0;
     size_t k;
@@ -513,7 +546,7 @@ void view_center(app_t *a, struct nk_rect r)
       a->method_menu = !a->method_menu;
   }
   run = nk_rect(x + w - 76, y, 76, 34);
-  st = ui_edit(a, nk_rect(mb.x + mb.w + 6, y, w - mb.w - 76 - 12, 34), a->req.url, BUILDER_URL_CAP,
+  st = ui_edit_dyn(a, nk_rect(mb.x + mb.w + 6, y, w - mb.w - 76 - 12, 34), &a->req.url, &a->req.url_cap,
                "https://example.com", a->f.mono, NK_EDIT_SIG_ENTER);
   if((st & NK_EDIT_COMMITED) && !running)
     app_push(a, ACT_RUN, 0, 0);

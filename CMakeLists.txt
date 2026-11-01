@@ -33,7 +33,7 @@ add_library(curlui_core STATIC
   src/core/options.c src/core/options_data.c src/core/builder.c
   src/core/procrun.c src/core/outbuf.c src/core/json_fmt.c
   src/core/curlinfo.c src/core/docs.c src/core/settings.c
-  src/core/json.c src/core/fileio.c)
+  src/core/json.c src/core/fileio.c src/core/argfile.c)
 target_include_directories(curlui_core PUBLIC src/core)
 target_link_libraries(curlui_core PUBLIC Threads::Threads)
 if(NOT WIN32)

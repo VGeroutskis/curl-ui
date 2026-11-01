@@ -11,6 +11,8 @@
 #include "nuklear_sdl_renderer.h"
 
 #include "app.h"
+#include "argfile.h"
+#include "fileio.h"
 #include "fonts_data.h"
 
 #ifdef _WIN32
@@ -181,7 +183,7 @@ static void frame(app_t *a)
 
 /* ---- scripted test hooks ---- */
 
-typedef enum { SC_MOUSE, SC_CLICK, SC_TYPE, SC_WHEEL } script_kind;
+typedef enum { SC_MOUSE, SC_CLICK, SC_PASTE, SC_TYPE, SC_WHEEL } script_kind;
 typedef struct {
   script_kind kind;
   int x, y, dy;
@@ -228,6 +230,18 @@ static void feed_wheel(struct nk_context *c, const void *arg)
 {
   const script_op *op = arg;
   nk_input_scroll(c, nk_vec2(0, (float)op->dy));
+}
+
+static void feed_paste(struct nk_context *c, const void *arg)
+{
+  (void)arg;
+  nk_input_key(c, NK_KEY_PASTE, nk_true);
+}
+
+static void feed_paste_up(struct nk_context *c, const void *arg)
+{
+  (void)arg;
+  nk_input_key(c, NK_KEY_PASTE, nk_false);
 }
 
 static void feed_enter(struct nk_context *c, const void *arg)
@@ -282,6 +296,18 @@ static void run_script(app_t *a, const script_op *ops, int n)
     case SC_WHEEL:
       input_frame(a, feed_motion, op);
       input_frame(a, feed_wheel, op);
+      settle(a);
+      break;
+    case SC_PASTE:
+      if(op->text) {
+        char *clip = file_read_all(op->text, NULL, (size_t)1 << 30);
+        if(clip) {
+          SDL_SetClipboardText(clip);
+          free(clip);
+        }
+      }
+      input_frame(a, feed_paste, NULL);
+      input_frame(a, feed_paste_up, NULL);
       settle(a);
       break;
     case SC_TYPE: {
@@ -413,6 +439,14 @@ int main(int argc, char **argv)
       have_cli_request = 1;
   }
   if((settings_dir || !screenshot) && !settings_path(settings_dir, "settings.ini", a->settings_path, sizeof(a->settings_path))) {
+    char dir[SETTINGS_PATH_CAP];
+    const char *slash = strrchr(a->settings_path, '/');
+    if(!slash)
+      slash = strrchr(a->settings_path, '\\');
+    if(slash) {
+      snprintf(dir, sizeof(dir), "%.*s", (int)(slash - a->settings_path), a->settings_path);
+      args_remove_stale(dir);
+    }
     settings_load(&a->set, a->settings_path);
     settings_path(settings_dir, "last-request.txt", request_path, sizeof(request_path));
     if(a->set.remember && !have_cli_request)
@@ -439,6 +473,24 @@ int main(int argc, char **argv)
       }
       app_add_option(a, name, eq ? eq + 1 : NULL);
     }
+    else if(!strcmp(arg, "--add-file")) {
+      /* NAME=PATH: the value comes from a file, for sizes no argument can carry */
+      char name[128];
+      const char *v = NEXT();
+      const char *eq = strchr(v, '=');
+      char *text;
+      if(!eq || options_find((snprintf(name, sizeof(name), "%.*s", (int)(eq - v), v), name)) < 0) {
+        fprintf(stderr, "bad --add-file: %s\n", v);
+        return 2;
+      }
+      text = file_read_all(eq + 1, NULL, (size_t)1 << 30);
+      if(!text) {
+        fprintf(stderr, "cannot read %s\n", eq + 1);
+        return 2;
+      }
+      app_add_option(a, name, text);
+      free(text);
+    }
     else if(!strcmp(arg, "--neg")) {
       const char *name = NEXT();
       int opt = options_find(name);
@@ -454,7 +506,7 @@ int main(int argc, char **argv)
     else if(!strcmp(arg, "--dump"))
       dump = NEXT();
     else if(!strcmp(arg, "--url"))
-      snprintf(a->req.url, sizeof(a->req.url), "%s", NEXT());
+      request_set_url(&a->req, NEXT());
     else if(!strcmp(arg, "--method"))
       method = NEXT();
     else if(!strcmp(arg, "--run"))
@@ -495,6 +547,11 @@ int main(int argc, char **argv)
         fprintf(stderr, "--wheel wants X,Y,DELTA\n");
         return 2;
       }
+    }
+    else if(!strcmp(arg, "--paste-file") && nops < MAX_SCRIPT) {
+      script_op *op = &ops[nops++];
+      op->kind = SC_PASTE;
+      op->text = NEXT();
     }
     else if(!strcmp(arg, "--type") && nops < MAX_SCRIPT) {
       script_op *op = &ops[nops++];
@@ -568,6 +625,7 @@ int main(int argc, char **argv)
             (double)g_scale);
 
   a->ctx = nk_sdl_init(g_window, g_renderer);
+  ui_install_paste(a);
   {
     Uint32 t0 = SDL_GetTicks();
     load_fonts(a);

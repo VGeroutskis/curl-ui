@@ -94,6 +94,7 @@ void view_header(app_t *a, struct nk_rect r)
 
 void view_frame(app_t *a)
 {
+  a->big_paste = 0;
   struct nk_context *ctx = a->ctx;
   float top = HEADER_H;
   float lib_w = NK_CLAMP(300, a->W * 0.24f, 380);

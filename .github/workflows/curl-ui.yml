@@ -40,6 +40,10 @@ jobs:
         env:
           SDL_VIDEODRIVER: dummy
         run: ./build/curl-ui --add location --docs location --screenshot smoke.bmp && test -s smoke.bmp
+      - name: Large values reach the server whole
+        env:
+          SDL_VIDEODRIVER: dummy
+        run: python3 tests/live/test_large.py --ui build/curl-ui
       - name: Sanitizers
         run: |
           cmake -S . -B build-san -DCMAKE_BUILD_TYPE=Debug -DCURLUI_SANITIZE=ON -DCURLUI_BUILD_GUI=OFF
@@ -117,6 +121,8 @@ jobs:
         run: |
           $p = Start-Process -Wait -PassThru -FilePath build\Release\curl-ui.exe -ArgumentList '--add location --docs location --screenshot smoke.bmp'
           if ($p.ExitCode -ne 0 -or -not (Test-Path smoke.bmp)) { exit 1 }
+      - name: Large values reach the server whole
+        run: python tests/live/test_large.py --ui build/Release/curl-ui.exe
       - name: Package
         working-directory: build
         run: cpack -C Release
@@ -165,6 +171,8 @@ jobs:
         run: |
           "build/curl UI.app/Contents/MacOS/curl UI" --add location --docs location --screenshot "$PWD/smoke.bmp"
           test -s smoke.bmp
+      - name: Large values reach the server whole
+        run: python3 tests/live/test_large.py --ui "build/curl UI.app/Contents/MacOS/curl UI"
       - name: Package
         run: cd build && cpack
       - name: Open the .dmg and run the app from it

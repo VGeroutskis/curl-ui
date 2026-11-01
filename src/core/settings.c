@@ -10,8 +10,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define LINE_CAP (BUILDER_VALUE_CAP * 2 + 64)
-
 void settings_defaults(settings_t *s)
 {
   memset(s, 0, sizeof(*s));
@@ -85,25 +83,42 @@ static void unescape(char *s)
   *d = '\0';
 }
 
-/* Next "key=value" line; comments and junk are skipped. 0 at end of file. */
-static int next_pair(FILE *f, char *line, size_t cap, char **key, char **value)
+/* Next "key=value" line of any length; comments and junk are skipped. 0 at end of file. */
+static int next_pair(FILE *f, char **buf, size_t *cap, char **key, char **value)
 {
-  while(fgets(line, (int)cap, f)) {
-    size_t n = strlen(line);
+  for(;;) {
+    size_t n = 0;
     char *eq;
-    while(n && (line[n - 1] == '\n' || line[n - 1] == '\r'))
-      line[--n] = '\0';
-    if(!n || line[0] == '#')
+    for(;;) {
+      if(*cap - n < 4096) {
+        size_t ncap = *cap ? *cap * 2 : 8192;
+        char *g = realloc(*buf, ncap);
+        if(!g)
+          return 0;
+        *buf = g;
+        *cap = ncap;
+      }
+      if(!fgets(*buf + n, (int)(*cap - n > 1048576 ? 1048576 : *cap - n), f)) {
+        if(!n)
+          return 0;
+        break;
+      }
+      n += strlen(*buf + n);
+      if(n && (*buf)[n - 1] == '\n')
+        break;
+    }
+    while(n && ((*buf)[n - 1] == '\n' || (*buf)[n - 1] == '\r'))
+      (*buf)[--n] = '\0';
+    if(!n || (*buf)[0] == '#')
       continue;
-    eq = strchr(line, '=');
+    eq = strchr(*buf, '=');
     if(!eq)
       continue;
     *eq = '\0';
-    *key = line;
+    *key = *buf;
     *value = eq + 1;
     return 1;
   }
-  return 0;
 }
 
 static int parse_int(const char *v, int lo, int hi, int fallback)
@@ -118,15 +133,11 @@ static int parse_int(const char *v, int lo, int hi, int fallback)
 int settings_load(settings_t *s, const char *path)
 {
   FILE *f = fopen(path, "rb");
-  char *line, *k, *v;
+  char *line = NULL, *k, *v;
+  size_t cap = 0;
   if(!f)
     return 0;
-  line = malloc(LINE_CAP);
-  if(!line) {
-    fclose(f);
-    return 0;
-  }
-  while(next_pair(f, line, LINE_CAP, &k, &v)) {
+  while(next_pair(f, &line, &cap, &k, &v)) {
     if(!strcmp(k, "theme"))
       s->dark = strcmp(v, "light") != 0;
     else if(!strcmp(k, "text_size")) {
@@ -214,21 +225,17 @@ int request_save(const request *r, int method, const char *path)
 int request_load(request *r, int *method, const char *path)
 {
   FILE *f = fopen(path, "rb");
-  char *line, *k, *v;
+  char *line = NULL, *k, *v;
+  size_t cap = 0;
   int current = -1, first_value = 0;
   if(!f)
     return 0;
-  line = malloc(LINE_CAP);
-  if(!line) {
-    fclose(f);
-    return 0;
-  }
-  while(next_pair(f, line, LINE_CAP, &k, &v)) {
+  while(next_pair(f, &line, &cap, &k, &v)) {
     if(!strcmp(k, "method"))
       *method = parse_int(v, 0, 7, 0);
     else if(!strcmp(k, "url")) {
       unescape(v);
-      snprintf(r->url, sizeof(r->url), "%s", v);
+      request_set_url(r, v);
     }
     else if(!strcmp(k, "option")) {
       /* an option this version does not know is dropped with its values */
@@ -244,13 +251,13 @@ int request_load(request *r, int *method, const char *path)
       if(!strcmp(k, "negated"))
         s->negated = g_options[current].neg[0] != 0;
       else if(!strcmp(k, "value") && g_options[current].arg[0]) {
-        char *slot;
         unescape(v);
         /* the first value goes into the empty field request_add made */
-        slot = (first_value && s->nvalues) ? s->values[0] : request_add_value(s);
+        if(first_value && s->nvalues)
+          request_set_value(s, 0, v);
+        else
+          request_append_value(s, v);
         first_value = 0;
-        if(slot)
-          snprintf(slot, BUILDER_VALUE_CAP, "%s", v);
       }
     }
   }
