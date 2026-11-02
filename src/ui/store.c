@@ -1,5 +1,6 @@
 /* Saving: what open tabs and the tree of collections do with the core's files. */
 #include "app.h"
+#include "oas_import.h"
 #include "cmdparse.h"
 #include "fileio.h"
 #include "reqjson.h"
@@ -436,6 +437,49 @@ int app_import_command(app_t *a, const char *text, char *err, size_t errn)
     if(!strcmp(g_method_names[i], method))
       t->method = i;
   t->form = FORM_CURL;
+  a->show_vars = a->show_settings = 0;
+  a->pending_unfocus = 1;
+  return 0;
+}
+
+int app_import_openapi(app_t *a, const char *path, char *err, size_t errn)
+{
+  const char **taken = a->ncolls ? malloc(sizeof(char *) * (size_t)a->ncolls) : NULL;
+  collection *c = NULL, **g;
+  var_store vars, *st;
+  oas_report rep;
+  char text[2048];
+  int i, rc;
+  for(i = 0; taken && i < a->ncolls; i++)
+    taken[i] = a->colls[i]->root->name;
+  rc = oas_import_file(path, taken, taken ? a->ncolls : 0, &c, &vars, &rep, err, errn);
+  free(taken);
+  if(rc) {
+    oas_report_free(&rep);
+    return -1;
+  }
+  g = realloc(a->colls, sizeof(collection *) * (size_t)(a->ncolls + 1));
+  st = g ? book_get(&a->book, c->id) : NULL;
+  if(g)
+    a->colls = g;
+  if(!st) {
+    snprintf(err, errn, "out of memory");
+    coll_free(c);
+    vars_free(&vars);
+    oas_report_free(&rep);
+    return -1;
+  }
+  a->colls[a->ncolls++] = c;
+  vars_free(st);
+  *st = vars;
+  c->root->open = 1;
+  oas_report_text(&rep, c->root->name, text, sizeof(text));
+  oas_report_free(&rep);
+  if(a->coll_dir[0] && coll_save(c, a->coll_dir))
+    snprintf(text, sizeof(text), "Imported, but the collection could not be saved.");
+  app_vars_save(a);
+  app_notice(a, text);
+  a->sidebar = SIDE_COLLECTIONS;
   a->show_vars = a->show_settings = 0;
   a->pending_unfocus = 1;
   return 0;

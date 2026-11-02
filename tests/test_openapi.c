@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include "fileio.h"
 #include "fsdir.h"
@@ -979,6 +980,75 @@ static void becomes_more(void)
   }
 }
 
+/* Each fixture cut short at every 64th byte: a reason or a result, never a crash. */
+static void damaged_every_64th_byte(void)
+{
+  static const char *const files[] = { "v3.1.0.yaml", "v3.0.4.json", "v2.0.yaml", "v1.2/pets.json" };
+  size_t i, cut;
+  char *out = fs_join(g_scratch, "cut.yaml");
+  for(i = 0; i < sizeof(files) / sizeof(files[0]); i++) {
+    char *p = fix(files[i]);
+    size_t len = 0;
+    char *text = file_read_all(p, &len, (size_t)1 << 24);
+    CHECK(text != NULL);
+    for(cut = 0; text && cut < len; cut += 64) {
+      collection *c = NULL;
+      var_store vs;
+      oas_report r;
+      char err[512];
+      file_write_private(out, text, cut);
+      if(!oas_import_file(out, NULL, 0, &c, &vs, &r, err, sizeof(err))) {
+        coll_free(c);
+        vars_free(&vs);
+      }
+      oas_report_free(&r);
+    }
+    free(text);
+    free(p);
+  }
+  free(out);
+  g_checks++;
+}
+
+/* Real specs refer to everything from everywhere: only what makes requests is followed, and a schema
+   too large is cut, not the file refused. */
+static void ref_only_what_requests_need(void)
+{
+  oas_load_report r;
+  char *p = fs_join(g_scratch, "wide.yaml"), err[256] = "";
+  size_t cap = 1 << 22, n = 0;
+  char *t = malloc(cap);
+  int level, k;
+  jv *v;
+  double t0 = (double)clock();
+  n += (size_t)snprintf(t + n, cap - n, "openapi: 3.0.0\ninfo: {title: W}\npaths:\n  /big:\n    post:\n      requestBody:\n        content:\n"
+                        "          application/json:\n            schema: {$ref: '#/components/schemas/L0'}\n      responses:\n"
+                        "        '200': {$ref: '#/nowhere/at/all'}\n      callbacks: {cb: {$ref: '#/nowhere/either'}}\n  /small:\n    get:\n"
+                        "      parameters:\n        - {$ref: '#/components/parameters/q'}\n      responses: {}\nwebhooks:\n  w1: {$ref: '#/nowhere/too'}\n"
+                        "components:\n  parameters:\n    q: {name: q, in: query, required: true, schema: {type: string}}\n  schemas:\n");
+  /* ten references at each of nine levels: a thousand million nodes if inlined */
+  for(level = 0; level < 9; level++) {
+    n += (size_t)snprintf(t + n, cap - n, "    L%d:\n      properties:\n", level);
+    for(k = 0; k < 10; k++)
+      n += (size_t)snprintf(t + n, cap - n, "        p%d: {$ref: '#/components/schemas/L%d'}\n", k, level + 1);
+  }
+  n += (size_t)snprintf(t + n, cap - n, "    L9: {type: string}\n");
+  CHECK(!file_write_private(p, t, n));
+  v = oas_load(p, &r, err, sizeof(err));
+  CHECK(v != NULL);
+  CHECK(r.truncated >= 1);
+  CHECK(r.broken_refs == 0);        /* responses, callbacks and webhooks were not followed */
+  CHECK(jv_len(jv_get(v, "webhooks")) == 1);
+  CHECK(jv_len(jv_get(jv_get(jv_get(jv_get(v, "paths"), "/big"), "post"), "callbacks")) == 1);
+  CHECK(jv_kind(jv_get(jv_get(jv_get(v, "paths"), "/small"), "get")) == JV_OBJ);
+  CHECK_STR(jv_str(jv_get(jv_at(jv_get(jv_get(jv_get(jv_get(v, "paths"), "/small"), "get"), "parameters"), 0), "name")), "q");
+  CHECK(((double)clock() - t0) / CLOCKS_PER_SEC < 30);
+  jv_free(v);
+  free(t);
+  free(p);
+  oas_load_report_free(&r);
+}
+
 int main(int argc, char **argv)
 {
   if(argc < 3) {
@@ -994,6 +1064,7 @@ int main(int argc, char **argv)
   ref_remote_counted();
   ref_broken_counted();
   ref_outside_folder_listed();
+  ref_only_what_requests_need();
   load_limit_files();
   load_limit_bytes();
   load_refusals();
@@ -1006,6 +1077,7 @@ int main(int argc, char **argv)
   swagger1();
   becomes();
   becomes_more();
+  damaged_every_64th_byte();
   printf("%d checks, %d failed\n", g_checks, g_fail);
   return g_fail ? 1 : 0;
 }

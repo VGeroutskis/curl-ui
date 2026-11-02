@@ -8,6 +8,7 @@
 #include <time.h>
 
 #include "fileio.h"
+#include "oas_import.h"
 
 #define ROW_H 26.0f
 #define DOUBLE_CLICK_MS 450u
@@ -123,9 +124,17 @@ static void deliver(app_t *a, const char *path)
     break;
   case PICK_FOR_IMPORT: {
     size_t len = 0;
-    char *text = file_read_all(path, &len, (size_t)16 << 20);
+    char *text = file_read_all(path, &len, OAS_MAX_BYTES);
     if(!text)
       snprintf(a->import_err, sizeof(a->import_err), "Cannot read that file");
+    else if(oas_looks_like_api(text, len)) {
+      a->import_err[0] = '\0';
+      free(text);
+      if(!app_import_openapi(a, path, a->import_err, sizeof(a->import_err))) {
+        a->dlg = DLG_NONE;
+        a->dlg_node = NULL;
+      }
+    }
     else {
       free(a->import_text);
       a->import_text = text;

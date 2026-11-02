@@ -899,6 +899,11 @@ int main(int argc, char **argv)
       if(app_import_command(a, NEXT(), err, sizeof(err)))
         app_notice(a, err);
     }
+    else if(!strcmp(arg, "--import-openapi")) {
+      char err[512];
+      if(app_import_openapi(a, NEXT(), err, sizeof(err)))
+        app_notice(a, err);
+    }
     else if(!strcmp(arg, "--import-dialog"))
       dialog_open(a, DLG_IMPORT, NULL);
     else if(!strcmp(arg, "--native-frame"))

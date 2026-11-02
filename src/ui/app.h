@@ -430,6 +430,7 @@ void app_history_begin(app_t *a, tab_t *t);
 void app_history_end(app_t *a, tab_t *t);
 void app_open_history(app_t *a, int index);
 int app_import_command(app_t *a, const char *text, char *err, size_t errn);  /* into a new or blank tab */
+int app_import_openapi(app_t *a, const char *path, char *err, size_t errn);  /* a new collection, and a report in the notice */
 void app_store_load(app_t *a);
 void app_session_load(app_t *a);
 void app_session_save(app_t *a);

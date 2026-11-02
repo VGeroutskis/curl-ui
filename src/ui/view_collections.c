@@ -622,10 +622,10 @@ void view_dialog(app_t *a)
     name_field = 0;
     break;
   case DLG_IMPORT:
-    title = "Import a curl command";
+    title = "Import";
     ok = "Import";
     name_field = 0;
-    hint = "Paste the command, or open a file holding it. Nothing runs until you press Run.";
+    hint = "A curl command here, or Open file for one, or an OpenAPI or Swagger file. Nothing runs yet.";
     h += 200;
     break;
   case DLG_QUIT:

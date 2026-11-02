@@ -44,6 +44,7 @@ jobs:
           python3 tests/live/test_store.py --ui build/curl-ui
           python3 tests/live/test_import.py --ui build/curl-ui
           python3 tests/live/test_picker.py --ui build/curl-ui
+          python3 tests/live/test_openapi.py --ui build/curl-ui
           python3 tests/live/test_regress.py --ui build/curl-ui
       - name: Sanitizers
         run: |

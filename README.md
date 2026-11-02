@@ -170,6 +170,27 @@ yourself. The Log says so on its first line, and they are not in the command you
 copy. The rest of the command is exactly what is executed, as an argument array
 with no shell. This can be turned off in Settings.
 
+### Importing an API description
+
+Import, then Open file, takes OpenAPI 3.2, 3.1 and 3.0 and Swagger 2.0, in JSON or YAML, and Swagger
+1.2, 1.1 and 1.0 as a listing beside its declarations. It makes a new collection, with nothing sent
+until you press Run, and the notice bar says what was made and what was left out.
+
+| In the file | In the app |
+|---|---|
+| The title | Collection, as `Name 2` if the name is taken |
+| The first tag, under the tags it names as parent | Folder |
+| An operation | Request, named by its summary, its operationId, or its method and path |
+| Servers, or host, basePath and schemes | One environment each, with `baseUrl` and the server's variables |
+| Path parameters | `{{baseUrl}}/pets/{{petId}}` |
+| Query and header parameters | Rows of Params and Headers: required on, others off, with the example or default, else `{{name}}` |
+| Cookie parameters | `--cookie` |
+| Security | The Auth form with empty secret variables. OAuth and OpenID Connect become Bearer with `{{token}}`, and mutual TLS gives `--cert` and `--key` to Browse for |
+| A request body | JSON from its example or schema; rows of URL encoded or Form data; Raw; or File |
+
+`$ref` is followed within the file and to files beside it. Files outside the folder of the first are named
+in the report. A name that cannot be a variable has `_` for what it cannot hold. Secret variables start empty.
+
 ### Screenshots
 
 | Variables, with secrets hidden | Asking for what is missing |
@@ -179,6 +200,7 @@ with no shell. This can be turned off in Settings.
 | Params, as plain text | Auth |
 |---|---|
 | ![The Params table showing a decoded query next to the encoded URL](docs/screenshots/params.png) | ![The Basic auth form using a variable for the password](docs/screenshots/auth.png) |
+| ![An API description imported as a collection](docs/screenshots/openapi.png) | ![An API description imported as a collection](docs/screenshots/auth.png) |
 
 | Body | History |
 |---|---|
@@ -335,7 +357,7 @@ saves the image and exits; `SDL_VIDEODRIVER=dummy` makes that work headless.
 | `--set-body KIND TEXT`, `--set-auth KIND A B` | fill a form, as kinds `raw`, `json`, `file`, `urlencoded`, `form-data`, `form-data-file`, and `basic`, `digest`, `bearer`, `apikey-header`, `apikey-query` |
 | `--sidebar collections\|history` | show a left view |
 | `--save-as COLLECTION/FOLDER/NAME`, `--open-node ID`, `--open-history N` | save and open requests |
-| `--import-cmd TEXT`, `--import-dialog` | import a curl command; open the Import dialog |
+| `--import-cmd TEXT`, `--import-dialog`, `--import-openapi FILE` | import a curl command; open the Import dialog; import an API description |
 | `--double-click X,Y` | scripted double click |
 | `--native-frame` | the system's title bar, for this run and those after it |
 | `--set-body-off K=V` | add a body row switched off |
@@ -356,6 +378,8 @@ saves the image and exits; `SDL_VIDEODRIVER=dummy` makes that work headless.
     argfile       arguments too long for a command line
     fileio        private files, replaced whole
     fsdir         folders and paths for the picker, which options take a path, the title bar's areas
+    yaml          YAML as far as API descriptions use it, into the JSON tree
+    oas_load, oas_read*, oas_model, oas_import  API descriptions: their files, each version, the collection
     builder       options -> argv, shell-quoted preview
     procrun       posix_spawn / CreateProcessW runner
     outbuf        thread-safe, line-indexed, sanitizing output buffer
@@ -365,7 +389,8 @@ saves the image and exits; `SDL_VIDEODRIVER=dummy` makes that work headless.
     settings      settings file
     osthread.h    portable thread and mutex
   src/ui/         SDL + Nuklear: main loop, theme, views, saving
-  tests/          ctest: test_core, test_args, test_api and the echoargs helper
+  tests/          ctest: test_core, test_args, test_api, test_fsdir, test_yaml, test_openapi, the echoargs helper
+  tests/fixtures/ small API descriptions, one per version
   tests/live/     the real app against servers
   tools/          generators
   third_party/    vendored Nuklear (commit in NUKLEAR_COMMIT)
@@ -396,6 +421,11 @@ saves the image and exits; `SDL_VIDEODRIVER=dummy` makes that work headless.
   into Set by options. `-H 'Accept:'`, which removes a header, loses that meaning when another
   row changes. `?flag` becomes `?flag=` when the Params table changes.
 - Import: `-d ''` loses its empty value, so the request becomes a GET.
+- API descriptions: only importing, into a new collection each time, never merged. No import from a URL, and
+  a `$ref` to one is left out, as are webhooks and callbacks, which the API sends rather than you. OAuth flows
+  are not run. Of several ways to sign in, the first is kept. YAML is read as far as these files use it, and
+  what it does not take is refused with the line. Swagger 1.0 and 1.1 have no published schema, so are read
+  where they have the shape of 1.2. Past 5000 nodes under one path, a body is cut short and the report says so.
 - The file picker is the app's own, the same everywhere: it has none of the system's favourites or
   previews. Double clicking the title bar does not maximize, except on Windows.
 - A Form data row cannot hold a path with `,` or `;`: Browse says so, and `--form` on Curl takes it.

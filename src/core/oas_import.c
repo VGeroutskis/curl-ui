@@ -413,6 +413,8 @@ void oas_report_text(const oas_report *r, const char *coll_name, char *out, size
   used = skipped(out, n, used, &first, r->alternatives_dropped, "other way to sign in", "other ways to sign in");
   if(!first && used < n)
     used += (size_t)snprintf(out + used, n - used, ".");
+  if(r->load.truncated && used < n)
+    used += (size_t)snprintf(out + used, n - used, " Very large bodies were cut short.");
   if(r->oauth && used < n)
     used += (size_t)snprintf(out + used, n - used, " OAuth is not run here: put a token in {{token}}.");
   if(r->xml_bodies && used < n)

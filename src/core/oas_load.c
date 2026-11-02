@@ -9,7 +9,6 @@
 #include "fsdir.h"
 #include "yaml.h"
 
-#define NODE_BUDGET 2000000L
 #define MAX_RECURSION 2000
 
 typedef struct {
@@ -21,7 +20,7 @@ typedef struct {
   loaded *files;
   int nfiles;
   size_t bytes;
-  long budget;
+  long budget, total;   /* nodes left for this path, and for the whole file */
   char *home;           /* the folder of the first file */
   str_list stack;       /* the references being followed */
   oas_load_report *rep;
@@ -204,6 +203,10 @@ static jv *follow(ctx *c, const jv *node, const char *ref, const char *file, int
   size_t klen;
   int i;
   char *copy_file;
+  if(c->budget < 0 || c->total < 0 || depth > MAX_RECURSION) {
+    c->rep->truncated++;
+    return jv_new(JV_OBJ);
+  }
   if(!strncmp(ref, "http://", 7) || !strncmp(ref, "https://", 8) || !strncmp(ref, "//", 2) || !strncmp(ref, "ftp://", 6)) {
     c->rep->remote_refs++;
     return jv_new(JV_OBJ);
@@ -296,10 +299,8 @@ static jv *resolve(ctx *c, const jv *node, const char *file, int depth)
   int i;
   if(c->failed)
     return NULL;
-  if(--c->budget < 0 || depth > MAX_RECURSION) {
-    stop(c, "its references expand to too much", NULL);
-    return NULL;
-  }
+  c->budget--;
+  c->total--;
   switch(jv_kind(node)) {
   case JV_OBJ: {
     const char *ref = jv_str(jv_get(node, "$ref"));
@@ -331,6 +332,128 @@ static jv *resolve(ctx *c, const jv *node, const char *file, int depth)
   default:
     return jv_clone(node);
   }
+}
+
+/* Only the names, to count them. */
+static jv *names_only(const jv *obj)
+{
+  jv *out = jv_new(JV_OBJ);
+  int i;
+  for(i = 0; i < jv_len(obj); i++)
+    jv_set(out, jv_key_at(obj, i), jv_new(JV_OBJ));
+  return out;
+}
+
+static int is_extension(const char *k)
+{
+  return k[0] == 'x' && k[1] == '-';
+}
+
+static jv *resolve_op(ctx *c, const jv *op, const char *file)
+{
+  jv *out;
+  int i;
+  if(jv_kind(op) != JV_OBJ)
+    return jv_clone(op);
+  out = jv_new(JV_OBJ);
+  for(i = 0; i < jv_len(op) && !c->failed; i++) {
+    const char *k = jv_key_at(op, i);
+    if(!strcmp(k, "responses") || is_extension(k))
+      continue;
+    if(!strcmp(k, "callbacks"))
+      jv_set(out, k, names_only(jv_get(op, k)));
+    else {
+      jv *v = resolve(c, jv_get(op, k), file, 1);
+      if(v)
+        jv_set(out, k, v);
+    }
+  }
+  return out;
+}
+
+static jv *resolve_item(ctx *c, const jv *item, const char *file)
+{
+  static const char *const methods[] = { "get", "put", "post", "delete", "options", "head", "patch", "trace", "query" };
+  jv *out;
+  int i;
+  size_t m;
+  c->budget = OAS_ITEM_NODES;
+  if(jv_str(jv_get(item, "$ref")))
+    return resolve(c, item, file, 0);
+  if(jv_kind(item) != JV_OBJ)
+    return jv_clone(item);
+  out = jv_new(JV_OBJ);
+  for(i = 0; i < jv_len(item) && !c->failed; i++) {
+    const char *k = jv_key_at(item, i);
+    int is_method = 0;
+    jv *v;
+    for(m = 0; m < sizeof(methods) / sizeof(methods[0]); m++)
+      if(!strcmp(k, methods[m]))
+        is_method = 1;
+    if(is_extension(k))
+      continue;
+    if(is_method)
+      v = resolve_op(c, jv_get(item, k), file);
+    else if(!strcmp(k, "additionalOperations")) {
+      const jv *ops = jv_get(item, k);
+      int n;
+      v = jv_new(JV_OBJ);
+      for(n = 0; n < jv_len(ops); n++)
+        jv_set(v, jv_key_at(ops, n), resolve_op(c, jv_get(ops, jv_key_at(ops, n)), file));
+    }
+    else
+      v = resolve(c, jv_get(item, k), file, 1);
+    if(v)
+      jv_set(out, k, v);
+  }
+  return out;
+}
+
+/* OpenAPI and Swagger 2.0: what makes requests, and no more. */
+static jv *resolve_api(ctx *c, const jv *root, const char *file)
+{
+  jv *out = jv_new(JV_OBJ);
+  int i;
+  for(i = 0; i < jv_len(root) && !c->failed; i++) {
+    const char *k = jv_key_at(root, i);
+    const jv *v = jv_get(root, k);
+    if(is_extension(k) || !strcmp(k, "definitions") || !strcmp(k, "parameters") || !strcmp(k, "responses"))
+      continue;
+    if(!strcmp(k, "webhooks"))
+      jv_set(out, k, names_only(v));
+    else if(!strcmp(k, "paths")) {
+      jv *paths = jv_new(JV_OBJ);
+      int n;
+      for(n = 0; n < jv_len(v) && !c->failed; n++) {
+        const char *path = jv_key_at(v, n);
+        jv *item;
+        if(is_extension(path))
+          continue;
+        item = resolve_item(c, jv_get(v, path), file);
+        if(item)
+          jv_set(paths, path, item);
+      }
+      jv_set(out, k, paths);
+    }
+    else if(!strcmp(k, "components")) {
+      jv *components = jv_new(JV_OBJ);
+      c->budget = OAS_ITEM_NODES;
+      if(jv_get(v, "securitySchemes")) {
+        jv *s = resolve(c, jv_get(v, "securitySchemes"), file, 0);
+        if(s)
+          jv_set(components, "securitySchemes", s);
+      }
+      jv_set(out, k, components);
+    }
+    else {
+      jv *r;
+      c->budget = OAS_ITEM_NODES;
+      r = resolve(c, v, file, 0);
+      if(r)
+        jv_set(out, k, r);
+    }
+  }
+  return out;
 }
 
 /* A Swagger 1.x listing names its declarations as paths next to it. */
@@ -401,7 +524,8 @@ jv *oas_load(const char *path, oas_load_report *rep, char *err, size_t errn)
   c.rep = rep;
   c.err = err;
   c.errn = errn;
-  c.budget = NODE_BUDGET;
+  c.budget = OAS_TOTAL_NODES;
+  c.total = OAS_TOTAL_NODES;
   canon = fs_canon(path);
   if(!canon) {
     snprintf(err, errn, "cannot read this file");
@@ -423,6 +547,8 @@ jv *oas_load(const char *path, oas_load_report *rep, char *err, size_t errn)
       if(is_listing(root))
         jv_set(out, "_declarations", load_declarations(&c, root, copy));
     }
+    else if(jv_get(root, "openapi") || jv_get(root, "swagger"))
+      out = resolve_api(&c, root, copy);
     else
       out = resolve(&c, root, copy, 0);
   }
