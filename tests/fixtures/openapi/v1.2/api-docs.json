@@ -1,0 +1,7 @@
+{"swaggerVersion":"1.2","apiVersion":"1.0","info":{"title":"Pet Store"},
+ "apis":[{"path":"/pets.{format}","description":"Pets"},{"path":"/users"}],
+ "authorizations":{
+  "key":{"type":"apiKey","passAs":"header","keyname":"X-Api-Key"},
+  "qkey":{"type":"apiKey","passAs":"query","keyname":"api_key"},
+  "basic":{"type":"basicAuth"},
+  "oauth":{"type":"oauth2","grantTypes":{}}}}

@@ -588,6 +588,81 @@ static void swagger2(void)
   oas_api_free(&a);
 }
 
+static void swagger1(void)
+{
+  oas_api a;
+  oas_op *o;
+  const oas_field *f;
+  char err[256];
+  static const char *const old[] = { "v1.1/api-docs.json", "v1.0/api-docs.json" };
+  size_t i;
+  /* s12_folder */
+  if(read_fixture("v1.2/api-docs.json", &a)) {
+    CHECK(0);
+    return;
+  }
+  CHECK_STR(a.title, "Pet Store");
+  CHECK(a.nservers == 1);
+  CHECK_STR(a.nservers ? a.servers[0].url : NULL, "https://api.example.com/v1");
+  o = op(&a, "GET", "/pets");
+  CHECK_STR(o->name, "List pets");
+  CHECK(o->nfolders == 1);
+  CHECK_STR(o->nfolders ? o->folders[0] : NULL, "pets");           /* s1x_resource_folder_per_declaration */
+  /* s12_paramtype_each */
+  f = field(&o->query, "limit");
+  CHECK(f && f->required);
+  CHECK_STR(f ? f->value : NULL, "10");
+  f = field(&o->query, "status");
+  CHECK_STR(f ? f->value : NULL, "open");
+  CHECK(field(&o->headers, "X-Trace") != NULL);
+  /* s12_authorizations */
+  CHECK(o->auth == OAS_AUTH_KEY_HEADER);
+  CHECK_STR(o->auth_name, "X-Api-Key");
+  o = op(&a, "POST", "/pets");
+  CHECK_STR(o->name, "createPet");
+  CHECK(o->auth == OAS_AUTH_BASIC);
+  CHECK(o->body == OAS_BODY_JSON);
+  CHECK(o->body_text && strstr(o->body_text, "\"name\"") && strstr(o->body_text, "\"owner\"") && strstr(o->body_text, "\"tags\""));
+  o = op(&a, "GET", "/pets/{petId}.json");
+  CHECK(o->auth == OAS_AUTH_KEY_QUERY);
+  CHECK_STR(o->auth_name, "api_key");
+  o = op(&a, "POST", "/upload");
+  CHECK(o->body == OAS_BODY_FORM);
+  f = field(&o->body_rows, "file");
+  CHECK(f && f->is_file && f->required);
+  CHECK(o->auth == OAS_AUTH_OAUTH);
+  o = op(&a, "DELETE", "/users");
+  CHECK_STR(o->folders[0], "users");
+  oas_api_free(&a);
+  /* s11_httpmethod_and_nickname, s10_same_shape */
+  for(i = 0; i < 2; i++) {
+    if(read_fixture(old[i], &a)) {
+      CHECK(0);
+      continue;
+    }
+    CHECK_STR(a.nservers ? a.servers[0].url : NULL, "http://old.example.com/api");
+    o = op(&a, "GET", "/pets.json/{id}");
+    CHECK_STR(o->name, "Get one");
+    f = field(&o->query, "full");
+    CHECK_STR(f ? f->value : NULL, "true");
+    o = op(&a, "PUT", "/pets.json/{id}");
+    CHECK_STR(o->name, "putPet");
+    CHECK(o->body == OAS_BODY_JSON && o->body_text && strstr(o->body_text, "\"name\""));
+    oas_api_free(&a);
+  }
+  /* one file holding a declaration */
+  CHECK(!read_text("{\"swaggerVersion\":\"1.1\",\"apis\":[{\"path\":\"/a\",\"operations\":[{\"httpMethod\":\"GET\",\"nickname\":\"a\"}]}]}", &a, err, sizeof(err)));
+  CHECK(a.nops == 1 && a.nservers == 0);
+  oas_api_free(&a);
+  /* s1x_other_shape_refused */
+  CHECK(read_text("{\"swaggerVersion\":\"1.0\",\"resources\":[1],\"other\":2}", &a, err, sizeof(err)));
+  CHECK(strstr(err, "1.0") && strstr(err, "resources"));
+  oas_api_free(&a);
+  CHECK(read_text("{\"swaggerVersion\":\"1.9\",\"apis\":[]}", &a, err, sizeof(err)));
+  CHECK(strstr(err, "1.9") != NULL);
+  oas_api_free(&a);
+}
+
 int main(int argc, char **argv)
 {
   if(argc < 3) {
@@ -612,6 +687,7 @@ int main(int argc, char **argv)
   versions_3x();
   samples();
   swagger2();
+  swagger1();
   printf("%d checks, %d failed\n", g_checks, g_fail);
   return g_fail ? 1 : 0;
 }

@@ -1,0 +1,8 @@
+{"swaggerVersion":"1.0","basePath":"http://old.example.com/api","resourcePath":"/pets",
+ "apis":[{"path":"/pets.{format}/{id}","operations":[
+  {"httpMethod":"GET","nickname":"getPet","summary":"Get one","responseClass":"Pet",
+   "parameters":[{"paramType":"path","name":"id","dataType":"long","required":true},
+                 {"paramType":"query","name":"full","dataType":"boolean","allowableValues":{"valueType":"LIST","values":["true","false"]}}]},
+  {"httpMethod":"PUT","nickname":"putPet",
+   "parameters":[{"paramType":"body","dataType":"Pet","required":true}]}]}],
+ "models":{"Pet":{"id":"Pet","properties":{"name":{"type":"string"}}}}}

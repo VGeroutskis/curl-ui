@@ -1,0 +1,1 @@
+{"swaggerVersion":"1.0","basePath":"http://old.example.com/api","apis":[{"path":"/pets.{format}"}]}
