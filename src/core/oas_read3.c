@@ -274,8 +274,10 @@ int oas_read3(const jv *root, oas_api *out, char *err, size_t errn)
   const jv *paths = jv_get(root, "paths"), *servers = jv_get(root, "servers");
   int i, k;
   size_t m;
-  (void)err;
-  (void)errn;
+  if(!paths && !jv_get(root, "webhooks")) {
+    snprintf(err, errn, "This API description has no paths, so it may be cut short");
+    return -1;
+  }
   out->title = oas_strdup(jv_str(jv_get(jv_get(root, "info"), "title")));
   if(!out->title)
     out->title = oas_strdup("Imported API");

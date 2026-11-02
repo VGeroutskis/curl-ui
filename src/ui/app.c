@@ -330,6 +330,18 @@ void app_run(app_t *a)
     CUR(a)->out_tab = TAB_RESPONSE;
     return;
   }
+  /* A value can make a URL begin with -: curl would take it for an option. Written so in the bar,
+     the builder puts --url in front; through a variable it can only be stopped here. */
+  {
+    const arg_list *real = &CUR(a)->args_real;
+    int k;
+    for(k = 0; k < real->count; k++) {
+      if(real->tok[k].kind == TOK_URL && real->tok[k].text[0] == '-' && (!k || strcmp(real->tok[k - 1].text, "--url"))) {
+        app_notice(a, "This URL begins with - after its variables are filled in, so curl would take it for an option. Nothing was run.");
+        return;
+      }
+    }
+  }
   /* nothing leaves until every variable has a value */
   {
     str_list missing;

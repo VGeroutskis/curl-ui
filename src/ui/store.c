@@ -476,7 +476,7 @@ int app_import_openapi(app_t *a, const char *path, char *err, size_t errn)
   oas_report_text(&rep, c->root->name, text, sizeof(text));
   oas_report_free(&rep);
   if(a->coll_dir[0] && coll_save(c, a->coll_dir))
-    snprintf(text, sizeof(text), "Imported, but the collection could not be saved.");
+    snprintf(text + strlen(text), sizeof(text) - strlen(text), " But the collection could not be saved.");
   app_vars_save(a);
   app_notice(a, text);
   a->sidebar = SIDE_COLLECTIONS;

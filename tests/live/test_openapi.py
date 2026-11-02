@@ -93,7 +93,7 @@ def main():
             del seen[:]
             values = ["--var", "baseUrl=" + base, "--var", "petId=7", "--var", "user=me", "--var", "sid=s1",
                       "--secret", "token=tk", "--var", "username=u", "--secret", "password=p",
-                      "--secret", "X-Api-Key=kk", "--secret", "api_key=qq", "--var", "env=api"]
+                      "--secret", "X-Api-Key=kk", "--secret", "api_key=qq"]
             text = app(home, "--open-node", ids[name], *values, *more, "--click", RUN)
             if not seen:
                 print("nothing arrived for %s: %s" % (name, field(text, "command")))
@@ -156,6 +156,15 @@ def main():
         check("Imported" in field(text, "notice"), "the Import dialog takes a file: %s" % field(text, "notice"))
         check(field(text, "picker") == "0", "the picker closed")
         check("coll_top_nodes=0" not in text, "the tree has it")
+
+        # a variable cannot turn the URL into an option of curl
+        home = os.path.join(tmp, "h-dash")
+        marker = os.path.join(tmp, "marker")
+        conf = os.path.join(tmp, "evil.conf")
+        with open(conf, "w", encoding="utf-8") as f:
+            f.write('output = "%s"\nurl = "%s/"\n' % (marker.replace("\\", "/"), base))
+        text = app(home, "--url", "{{b}}", "--var", "b=-K" + conf, "--click", RUN)
+        check("begins with -" in field(text, "notice") and not os.path.exists(marker), "nothing runs: %s" % field(text, "notice")[:60])
 
         # a file that is not one: nothing made, and the reason
         home = os.path.join(tmp, "h-bad")

@@ -13,6 +13,8 @@ typedef struct {
   int requests;
   oas_load_report load;
   int webhooks, callbacks, oauth, alternatives_dropped, xml_bodies;
+  int unsafe;             /* parts left out, that would have made curl read a file or take an option */
+  char *relative_server;  /* the first with no host */
 } oas_report;
 
 /* taken_names: of the collections there are, for "Name 2". vars is made here. rep needs

@@ -181,7 +181,7 @@ until you press Run, and the notice bar says what was made and what was left out
 | The title | Collection, as `Name 2` if the name is taken |
 | The first tag, under the tags it names as parent | Folder |
 | An operation | Request, named by its summary, its operationId, or its method and path |
-| Servers, or host, basePath and schemes | One environment each, with `baseUrl` and the server's variables |
+| Servers, or host, basePath and schemes | One environment each, with `baseUrl`, its variables filled in with their defaults. A server with no host leaves `baseUrl` for Run to ask |
 | Path parameters | `{{baseUrl}}/pets/{{petId}}` |
 | Query and header parameters | Rows of Params and Headers: required on, others off, with the example or default, else `{{name}}` |
 | Cookie parameters | `--cookie` |
@@ -190,6 +190,10 @@ until you press Run, and the notice bar says what was made and what was left out
 
 `$ref` is followed within the file and to files beside it. Files outside the folder of the first are named
 in the report. A name that cannot be a variable has `_` for what it cannot hold. Secret variables start empty.
+
+What a file says stays text. It cannot make curl read a local file or take an option: a header name that is
+not one, or a server beginning with `-`, is left out and counted in the report, and the file of a File row is
+yours to choose, whatever its example says.
 
 ### Screenshots
 

@@ -8,6 +8,9 @@
 #include <string.h>
 
 #define MODEL_MAX_DEPTH 12
+#define MODEL_NODES 5000L
+
+static long g_nodes_left;  /* a model can name itself many times over */
 
 static jv *type_schema(const char *type, const jv *models, const jv *from, int depth);
 
@@ -37,7 +40,7 @@ static jv *type_schema(const char *type, const jv *models, const jv *from, int d
   char lower[32] = "";
   size_t i;
   const jv *v;
-  if(depth > MODEL_MAX_DEPTH || !type)
+  if(depth > MODEL_MAX_DEPTH || !type || --g_nodes_left < 0)
     return s;
   for(i = 0; type[i] && i + 1 < sizeof(lower); i++)
     lower[i] = (char)tolower((unsigned char)type[i]);
@@ -105,6 +108,7 @@ static jv *convert_op(const jv *op, const jv *decl, const char *tag)
   jv *form = NULL, *required = jv_new(JV_ARR);
   const jv *body = NULL;
   int i, has_file = 0;
+  g_nodes_left = MODEL_NODES;
   if(jv_get(op, "summary"))
     jv_set(o, "summary", jv_clone(jv_get(op, "summary")));
   if(jv_get(op, "nickname"))

@@ -124,7 +124,7 @@ static void deliver(app_t *a, const char *path)
     break;
   case PICK_FOR_IMPORT: {
     size_t len = 0;
-    char *text = file_read_all(path, &len, OAS_MAX_BYTES);
+    char *text = fs_is_regular(path) ? file_read_all(path, &len, OAS_MAX_BYTES) : NULL;
     if(!text)
       snprintf(a->import_err, sizeof(a->import_err), "Cannot read that file");
     else if(oas_looks_like_api(text, len)) {

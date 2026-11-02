@@ -23,6 +23,7 @@ void fs_listing_free(fs_listing *l);
 
 enum { FS_MISSING, FS_FILE, FS_DIR };
 int fs_kind(const char *path);
+int fs_is_regular(const char *path);  /* a file to read, not a pipe, socket or device */
 /* An absolute path with no . or .. in it. A path that does not exist is still made absolute.
    Returns a malloc'd string, or NULL. */
 char *fs_canon(const char *path);

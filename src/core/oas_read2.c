@@ -186,6 +186,12 @@ int oas_read2(const jv *root, oas_api *out, char *err, size_t errn)
   int rc;
   static const char *const copied[] = { "info", "tags", "security", NULL };
   int i;
+  if(!jv_get(root, "paths")) {
+    jv_free(v3);
+    jv_free(components);
+    snprintf(err, errn, "This API description has no paths, so it may be cut short");
+    return -1;
+  }
   for(i = 0; copied[i]; i++)
     if(jv_get(root, copied[i]))
       jv_set(v3, copied[i], jv_clone(jv_get(root, copied[i])));

@@ -81,7 +81,7 @@ static const loaded *load_file(ctx *c, const char *path, int required)
     stop(c, "more than 256 files are referred to", NULL);
     return NULL;
   }
-  if(fs_kind(path) != FS_FILE) {
+  if(!fs_is_regular(path)) {  /* a pipe or a device would never answer */
     if(required)
       stop(c, "cannot read this file", path);
     return NULL;
@@ -207,7 +207,8 @@ static jv *follow(ctx *c, const jv *node, const char *ref, const char *file, int
     c->rep->truncated++;
     return jv_new(JV_OBJ);
   }
-  if(!strncmp(ref, "http://", 7) || !strncmp(ref, "https://", 8) || !strncmp(ref, "//", 2) || !strncmp(ref, "ftp://", 6)) {
+  if(!strncmp(ref, "http://", 7) || !strncmp(ref, "https://", 8) || !strncmp(ref, "//", 2) || !strncmp(ref, "ftp://", 6) ||
+     !strncmp(ref, "\\\\", 2)) {  /* on Windows, a share: opening it is a connection */
     c->rep->remote_refs++;
     return jv_new(JV_OBJ);
   }

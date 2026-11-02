@@ -121,6 +121,8 @@ jv *jv_get(const jv *obj, const char *key)
 
 const char *jv_key_at(const jv *obj, int i)
 {
+  if(jv_kind(obj) == JV_ARR)
+    return "";  /* where a file has a list for a map: a loop over its length needs a string */
   return jv_kind(obj) == JV_OBJ && i >= 0 && i < obj->count ? obj->keys[i] : NULL;
 }
 

@@ -157,6 +157,14 @@ int fs_kind(const char *path)
   return (at & FILE_ATTRIBUTE_DIRECTORY) ? FS_DIR : FS_FILE;
 }
 
+int fs_is_regular(const char *path)
+{
+  wchar_t *w = to_wide(path);
+  DWORD at = w ? GetFileAttributesW(w) : INVALID_FILE_ATTRIBUTES;
+  free(w);
+  return at != INVALID_FILE_ATTRIBUTES && !(at & (FILE_ATTRIBUTE_DIRECTORY | FILE_ATTRIBUTE_DEVICE));
+}
+
 char *fs_canon(const char *path)
 {
   wchar_t *w = to_wide(path);
@@ -266,6 +274,12 @@ int fs_kind(const char *path)
   if(stat(path, &st))
     return FS_MISSING;
   return S_ISDIR(st.st_mode) ? FS_DIR : FS_FILE;
+}
+
+int fs_is_regular(const char *path)
+{
+  struct stat st;
+  return !stat(path, &st) && S_ISREG(st.st_mode);
 }
 
 /* Folds . and .. by hand: what comes after a missing folder cannot be asked of the system. */

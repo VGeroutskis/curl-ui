@@ -3,6 +3,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#ifndef _WIN32
+#include <sys/stat.h>
+#endif
 
 #include "fileio.h"
 #include "fsdir.h"
@@ -838,8 +841,7 @@ static void becomes(void)
   CHECK(im.vars.n == 2);
   CHECK_STR(im.vars.e[0].name, "Production");
   CHECK_STR(im.vars.e[1].name, "Local");
-  CHECK_STR(env_value(&im.vars.e[0], "baseUrl"), "https://{{env}}.example.com/v1");
-  CHECK_STR(env_value(&im.vars.e[0], "env"), "api");
+  CHECK_STR(env_value(&im.vars.e[0], "baseUrl"), "https://api.example.com/v1");
   CHECK_STR(env_value(&im.vars.e[1], "baseUrl"), "http://localhost:8080");
   /* secrets_empty_and_secret: in each environment */
   x = var_find(&im.vars.e[1], "token");
@@ -853,7 +855,7 @@ static void becomes(void)
   x = var_find(&im.vars.e[0], "username");
   CHECK(x && !x->secret);
   /* default_values_stay_plain */
-  x = var_find(&im.vars.e[0], "env");
+  x = var_find(&im.vars.e[0], "baseUrl");
   CHECK(x && !x->secret);
   imported_free(&im);
 }
@@ -1049,6 +1051,311 @@ static void ref_only_what_requests_need(void)
   oas_load_report_free(&r);
 }
 
+/* ---- what the review of this work found ---- */
+
+static char *repeat(const char *head, const char *unit, int times, const char *tail)
+{
+  size_t n = strlen(head) + strlen(unit) * (size_t)times + strlen(tail) + 1;
+  char *t = malloc(n), *w = t;
+  int i;
+  w += sprintf(w, "%s", head);
+  for(i = 0; i < times; i++)
+    w += sprintf(w, "%s", unit);
+  sprintf(w, "%s", tail);
+  return t;
+}
+
+static void review_template_overflow(void)
+{
+  imported im;
+  char *t = repeat("openapi: 3.0.0\ninfo: {title: T}\npaths:\n  '/", "{}", 400, "':\n    get: {}\n");
+  memset(&im, 0, sizeof(im));
+  CHECK(!import_text(t, &im));
+  CHECK(im.rep.requests == 1);
+  imported_free(&im);
+  free(t);
+  t = repeat("openapi: 3.0.0\ninfo: {title: T}\nservers:\n  - url: 'http://", "{}", 400, "'\npaths: {}\n");
+  memset(&im, 0, sizeof(im));
+  CHECK(!import_text(t, &im));
+  imported_free(&im);
+  free(t);
+}
+
+static void review_props_recursion(void)
+{
+  char *t = repeat("", "!!map\n", 200000, "a: 1\n"), err[128] = "";
+  jv *v = yaml_parse(t, strlen(t), err, sizeof(err));
+  CHECK(!v && strstr(err, "deep"));
+  jv_free(v);
+  free(t);
+  t = repeat("", "&a\n", 200000, "a: 1\n");
+  v = yaml_parse(t, strlen(t), err, sizeof(err));
+  CHECK(!v);
+  jv_free(v);
+  free(t);
+  CHECK(!oas_looks_like_api("!!map\n", 6));
+}
+
+/* Each value of a real fixture replaced by something of another type. A reason or a result. */
+static int g_mut_target, g_mut_seen;
+static jv *mutate(const jv *v, const char *kind)
+{
+  jv *out;
+  int i;
+  if(g_mut_seen++ == g_mut_target) {
+    if(kind[0] == 'a') {
+      jv *a = jv_new(JV_ARR);
+      jv_push(a, jv_new_num(1));
+      return a;
+    }
+    if(kind[0] == 's')
+      return jv_new_str("x");
+    if(kind[0] == 'n')
+      return jv_new_num(1);
+    if(kind[0] == 'o')
+      return jv_new(JV_OBJ);
+    return jv_new(JV_NULL);
+  }
+  if(jv_kind(v) == JV_OBJ) {
+    out = jv_new(JV_OBJ);
+    for(i = 0; i < jv_len(v); i++)
+      jv_set(out, jv_key_at(v, i), mutate(jv_get(v, jv_key_at(v, i)), kind));
+    return out;
+  }
+  if(jv_kind(v) == JV_ARR) {
+    out = jv_new(JV_ARR);
+    for(i = 0; i < jv_len(v); i++)
+      jv_push(out, mutate(jv_at(v, i), kind));
+    return out;
+  }
+  return jv_clone(v);
+}
+
+static void review_type_mutation(void)
+{
+  static const char *const files[] = { "v3.2.1.json", "v2.0.json", "v1.2/pets.json" };
+  static const char *const kinds[] = { "a", "s", "n", "o", "z" };
+  size_t i, k;
+  char *out = fs_join(g_scratch, "mut.json");
+  for(i = 0; i < sizeof(files) / sizeof(files[0]); i++) {
+    char *p = fix(files[i]), err[256];
+    char *text = file_read_all(p, NULL, (size_t)1 << 24);
+    jv *root = text ? jv_parse(text, strlen(text), err, sizeof(err)) : NULL;
+    CHECK(root != NULL);
+    for(k = 0; root && k < 5; k++) {
+      int total;
+      jv *whole;
+      /* how many values there are, with none replaced */
+      g_mut_target = -1;
+      g_mut_seen = 0;
+      whole = mutate(root, kinds[k]);
+      total = g_mut_seen;
+      jv_free(whole);
+      for(g_mut_target = 0; g_mut_target < total; g_mut_target++) {
+        collection *c = NULL;
+        var_store vs;
+        oas_report r;
+        jv *m;
+        char *json;
+        g_mut_seen = 0;
+        m = mutate(root, kinds[k]);
+        json = jv_write(m, 0, NULL);
+        file_write_private(out, json, strlen(json));
+        if(!oas_import_file(out, NULL, 0, &c, &vs, &r, err, sizeof(err))) {
+          coll_free(c);
+          vars_free(&vs);
+        }
+        oas_report_free(&r);
+        free(json);
+        jv_free(m);
+      }
+    }
+    jv_free(root);
+    free(text);
+    free(p);
+  }
+  free(out);
+  g_checks++;
+}
+
+static void review_model_bomb(void)
+{
+  char *p = fs_join(g_scratch, "bomb.json"), err[256];
+  char *t = repeat("{\"swaggerVersion\":\"1.2\",\"apis\":[{\"path\":\"/a\",\"operations\":[{\"method\":\"POST\",\"parameters\":[{\"paramType\":\"body\",\"type\":\"A\"}]}]}],"
+                   "\"models\":{\"A\":{\"properties\":{\"p0\":{\"$ref\":\"A\"}", "", 0, "");
+  {
+    size_t n = strlen(t);
+    int i;
+    t = realloc(t, n + 4096);
+    for(i = 1; i < 30; i++)
+      n += (size_t)sprintf(t + n, ",\"p%d\":{\"$ref\":\"A\"}", i);
+    sprintf(t + n, "}}}}");
+  }
+  {
+    collection *c = NULL;
+    var_store vs;
+    oas_report r;
+    clock_t t0 = clock();
+    CHECK(!file_write_private(p, t, strlen(t)));
+    CHECK(!oas_import_file(p, NULL, 0, &c, &vs, &r, err, sizeof(err)));
+    CHECK((double)(clock() - t0) / CLOCKS_PER_SEC < 20.0);
+    if(c) {
+      coll_free(c);
+      vars_free(&vs);
+    }
+    oas_report_free(&r);
+  }
+  free(t);
+  free(p);
+}
+
+/* Text from a file must stay text. Nothing it says may make curl read something. */
+static void review_no_file_reads(void)
+{
+  imported im;
+  req_view v;
+  memset(&im, 0, sizeof(im));
+  CHECK(!import_text("openapi: 3.0.0\ninfo: {title: T}\npaths:\n  /j:\n    post:\n      requestBody:\n        content:\n          application/json:\n            example: '@/etc/passwd'\n"
+                     "  /f:\n    post:\n      requestBody:\n        content:\n          multipart/form-data:\n            schema:\n              required: [f, 'a=@/etc/passwd;x']\n              properties:\n"
+                     "                f: {type: string, format: binary, example: /etc/passwd}\n                'a=@/etc/passwd;x': {type: string, format: binary}\n"
+                     "  /h:\n    get:\n      parameters:\n        - {name: '@/etc/passwd', in: header, required: true, example: ''}\n        - {name: '@/etc/shadow', in: header, required: true, example: v}\n        - {name: ok, in: header, required: true, example: v}\n"
+                     "  /k:\n    get:\n      security: [{bad: []}]\ncomponents:\n  securitySchemes:\n    bad: {type: apiKey, in: header, name: '@/etc/passwd'}\n", &im));
+  if(!view(kid(im.c->root, "POST /j"), &v)) {
+    const char *j = val(&v, "json", 0);
+    CHECK(j && j[0] != '@');
+    view_free(&v);
+  }
+  if(!view(kid(im.c->root, "POST /f"), &v)) {
+    CHECK_STR(val(&v, "form", 0), "f=@");
+    CHECK(val(&v, "form", 1) == NULL);
+    view_free(&v);
+  }
+  if(!view(kid(im.c->root, "GET /h"), &v)) {
+    CHECK_STR(val(&v, "header", 0), "ok: v");
+    CHECK(val(&v, "header", 1) == NULL);
+    view_free(&v);
+  }
+  if(!view(kid(im.c->root, "GET /k"), &v)) {
+    CHECK(val(&v, "header", 0) == NULL);
+    view_free(&v);
+  }
+  CHECK(im.rep.unsafe == 4);  /* two headers, a form name, the name of an API key */
+  imported_free(&im);
+}
+
+static void review_server_urls(void)
+{
+  imported im;
+  char text[1024];
+  /* a server cannot be an option of curl; server variables are in the value, which is not read again */
+  memset(&im, 0, sizeof(im));
+  CHECK(!import_text("openapi: 3.0.0\ninfo: {title: T}\nservers:\n  - {url: '-K/tmp/x', description: Bad}\n  - {url: '{a}/v', description: Bad2, variables: {a: {default: '-K/tmp/y'}}}\n"
+                     "  - {url: 'https://{h}/v', description: Good, variables: {h: {default: api.example.com}}}\n  - {url: /rel, description: Rel}\npaths: {}\n", &im));
+  CHECK(im.vars.n == 4);
+  CHECK(var_find(&im.vars.e[0], "baseUrl") == NULL);
+  CHECK(var_find(&im.vars.e[1], "baseUrl") == NULL);
+  CHECK_STR(env_value(&im.vars.e[2], "baseUrl"), "https://api.example.com/v");
+  CHECK(var_find(&im.vars.e[3], "baseUrl") == NULL);
+  CHECK(im.rep.unsafe == 2);
+  CHECK(im.rep.relative_server && strstr(im.rep.relative_server, "/rel"));
+  oas_report_text(&im.rep, "T", text, sizeof(text));
+  CHECK(strstr(text, "/rel") && strstr(text, "baseUrl"));
+  imported_free(&im);
+}
+
+static int looks(const char *t)
+{
+  return oas_looks_like_api(t, strlen(t));
+}
+
+static void review_damaged_says_so(void)
+{
+  /* a file that says what it is, even when it cannot be read, is not a curl command */
+  CHECK(looks("openapi: 3.0.0\npaths:\n\t- x\n"));
+  CHECK(looks("# c\nswagger: \"2.0\"\na: [\n"));
+  CHECK(looks("{\"openapi\":\"3.0.0\",\"paths\":{"));
+  CHECK(looks("{\n  \"swaggerVersion\": \"1.2\",\n"));
+  CHECK(!looks("curl http://x\n"));
+}
+
+static void review_no_paths_refused(void)
+{
+  oas_api a;
+  char err[256] = "";
+  CHECK(read_text("openapi: 3.0.0\ninfo:\n  title: T\n", &a, err, sizeof(err)));
+  CHECK(strstr(err, "paths") != NULL);
+  oas_api_free(&a);
+  CHECK(read_text("swagger: '2.0'\ninfo:\n  title: T\n", &a, err, sizeof(err)));
+  oas_api_free(&a);
+  CHECK(!read_text("openapi: 3.1.0\ninfo: {title: T}\nwebhooks: {a: {}}\n", &a, err, sizeof(err)));
+  oas_api_free(&a);
+}
+
+static void review_unc_ref(void)
+{
+  imported im;
+  memset(&im, 0, sizeof(im));
+  CHECK(!import_text("openapi: 3.0.0\ninfo: {title: T}\npaths:\n  /a:\n    post:\n      requestBody:\n        content:\n          application/json:\n"
+                     "            schema: {$ref: '\\\\attacker\\share\\x.yaml'}\n", &im));
+  CHECK(im.rep.load.remote_refs == 1);
+  CHECK(im.rep.load.files == 1);
+  imported_free(&im);
+}
+
+static void review_fifo_ref(void)
+{
+#ifndef _WIN32
+  imported im;
+  char *p = fs_join(g_scratch, "pipe");
+  char t[512];
+  mkfifo(p, 0600);
+  snprintf(t, sizeof(t), "openapi: 3.0.0\ninfo: {title: T}\npaths:\n  /a:\n    post:\n      requestBody:\n        content:\n          application/json:\n"
+           "            schema: {$ref: '%s'}\n", p);
+  memset(&im, 0, sizeof(im));
+  CHECK(!import_text(t, &im));
+  CHECK(im.rep.load.broken_refs == 1);
+  imported_free(&im);
+  free(p);
+#endif
+}
+
+static void review_report_names_outside(void)
+{
+  oas_report r;
+  char text[2048], long_name[3000];
+  str_list l;
+  char *s = malloc(32);
+  memset(&r, 0, sizeof(r));
+  memset(long_name, 'n', sizeof(long_name));
+  long_name[sizeof(long_name) - 1] = '\0';
+  strcpy(s, "/etc/x.yaml");
+  l.s = malloc(sizeof(char *));
+  l.s[0] = s;
+  l.n = 1;
+  r.requests = 1;
+  r.load.outside = l;
+  oas_report_text(&r, long_name, text, sizeof(text));
+  CHECK(strstr(text, "/etc/x.yaml") != NULL);
+  str_list_free(&l);
+}
+
+static void review_alias_after_key(void)
+{
+  const char *y = "x: &x {type: string}\nl:\n  - name: a\n    schema: *x\n  - name: b\n";
+  char err[256] = "";
+  jv *v = yaml_parse(y, strlen(y), err, sizeof(err));
+  CHECK(v != NULL);
+  CHECK(jv_len(jv_get(v, "l")) == 2);
+  jv_free(v);
+}
+
+static const struct { const char *name; void (*fn)(void); } g_review[] = {
+  { "template", review_template_overflow }, { "props", review_props_recursion }, { "mutation", review_type_mutation },
+  { "bomb", review_model_bomb }, { "reads", review_no_file_reads }, { "servers", review_server_urls },
+  { "damaged", review_damaged_says_so }, { "nopaths", review_no_paths_refused }, { "unc", review_unc_ref },
+  { "fifo", review_fifo_ref }, { "outside", review_report_names_outside }, { "alias", review_alias_after_key },
+};
+
 int main(int argc, char **argv)
 {
   if(argc < 3) {
@@ -1057,6 +1364,14 @@ int main(int argc, char **argv)
   }
   g_fix = argv[1];
   g_scratch = argv[2];
+  if(argc > 3) {  /* one of the review's cases alone */
+    size_t i;
+    for(i = 0; i < sizeof(g_review) / sizeof(g_review[0]); i++)
+      if(!strcmp(g_review[i].name, argv[3]))
+        g_review[i].fn();
+    printf("%d checks, %d failed\n", g_checks, g_fail);
+    return g_fail ? 1 : 0;
+  }
   ref_same_file();
   ref_other_file_relative();
   ref_siblings_merge();
@@ -1078,6 +1393,11 @@ int main(int argc, char **argv)
   becomes();
   becomes_more();
   damaged_every_64th_byte();
+  {
+    size_t i;
+    for(i = 0; i < sizeof(g_review) / sizeof(g_review[0]); i++)
+      g_review[i].fn();
+  }
   printf("%d checks, %d failed\n", g_checks, g_fail);
   return g_fail ? 1 : 0;
 }

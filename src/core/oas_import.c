@@ -43,7 +43,7 @@ static char *braced(const char *name)
 static char *template_vars(const char *s)
 {
   size_t n = strlen(s);
-  char *out = malloc(n * 2 + 16);
+  char *out = malloc(n * 5 + 16);  /* {} becomes {{value}} */
   size_t w = 0;
   const char *c = s;
   if(!out)
@@ -81,13 +81,35 @@ static void add_opt(request *r, const char *opt, const char *value)
     request_append_value(s, value);
 }
 
-static void field_rows(const oas_fields *from, kv_list *rows)
+/* A header's name as HTTP has it. Anything else may start with @, where curl reads a file. */
+static int is_token(const char *name)
+{
+  const char *c;
+  if(!*name)
+    return 0;
+  for(c = name; *c; c++)
+    if(!isalnum((unsigned char)*c) && !strchr("!#$%&'*+-.^_`|~", *c))
+      return 0;
+  return 1;
+}
+
+typedef enum { ROWS_PLAIN, ROWS_HEADERS, ROWS_BODY } rows_kind;
+
+/* Whatever a file says here stays text: curl reads a file on @, in a header and in a file row,
+   so names that could say so are left out, and what a file row points at is for the user to choose. */
+static void field_rows(const oas_fields *from, kv_list *rows, rows_kind kind, int *unsafe)
 {
   int i;
   for(i = 0; i < from->n; i++) {
     const oas_field *f = &from->f[i];
-    char *v = f->value ? NULL : (f->is_file ? NULL : braced(f->name));
-    kv_row *row = kv_add(rows, f->name, f->value ? f->value : (v ? v : ""), f->required);
+    char *v = f->is_file || f->value ? NULL : braced(f->name);
+    kv_row *row;
+    if((kind == ROWS_HEADERS && !is_token(f->name)) || (f->is_file && strpbrk(f->name, "=;,\""))) {
+      (*unsafe)++;
+      free(v);
+      continue;
+    }
+    row = kv_add(rows, f->name, f->is_file ? "" : (f->value ? f->value : (v ? v : "")), f->required);
     if(row)
       row->is_file = f->is_file;
     free(v);
@@ -105,7 +127,7 @@ static void want_secret(var_store *vars, const char *name, int secret)
       var_set(&vars->e[i], v, "", secret);
 }
 
-static void set_auth(request *r, form_hints *h, const oas_op *o, var_store *vars, char **cookies)
+static void set_auth(request *r, form_hints *h, const oas_op *o, var_store *vars, char **cookies, int *unsafe)
 {
   char err[64];
   char *b;
@@ -125,6 +147,10 @@ static void set_auth(request *r, form_hints *h, const oas_op *o, var_store *vars
   case OAS_AUTH_KEY_QUERY:
     if(!o->auth_name)
       break;
+    if(o->auth == OAS_AUTH_KEY_HEADER && !is_token(o->auth_name)) {
+      (*unsafe)++;
+      break;
+    }
     b = braced(o->auth_name);
     form_auth_set(r, h, AUTH_APIKEY, o->auth_name, b, o->auth == OAS_AUTH_KEY_QUERY ? "query" : "header", err, sizeof(err));
     free(b);
@@ -161,7 +187,7 @@ static void set_auth(request *r, form_hints *h, const oas_op *o, var_store *vars
 
 static const char *const g_known_methods[] = { "GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS", NULL };
 
-static jv *build_request(const oas_op *o, var_store *vars)
+static jv *build_request(const oas_op *o, var_store *vars, int *unsafe)
 {
   request r;
   form_hints h;
@@ -185,7 +211,7 @@ static jv *build_request(const oas_op *o, var_store *vars)
   if(url)
     snprintf(url, n, "{{baseUrl}}%s", path ? path : "");
   free(path);
-  field_rows(&o->query, &params);
+  field_rows(&o->query, &params, ROWS_PLAIN, unsafe);
   built = query_build(url ? url : "", &params);
   request_set_url(&r, built ? built : "");
   free(built);
@@ -205,16 +231,27 @@ static jv *build_request(const oas_op *o, var_store *vars)
     if(!params.r[i].enabled)
       kv_add(&h.disabled_params, params.r[i].key, params.r[i].value, 0);
 
-  field_rows(&o->headers, &headers);
+  field_rows(&o->headers, &headers, ROWS_HEADERS, unsafe);
   /* --json says application/json by itself: any other type is said here */
   if(o->content_type && (o->body == OAS_BODY_RAW || o->body == OAS_BODY_FILE || (o->body == OAS_BODY_JSON && strcmp(o->content_type, "application/json"))))
     kv_add(&headers, "Content-Type", o->content_type, 1);
   form_headers_set(&r, &h, &headers);
 
   switch(o->body) {
-  case OAS_BODY_JSON:
-    form_body_set(&r, BODY_JSON, NULL, o->body_text ? o->body_text : "{}", err, sizeof(err));
+  case OAS_BODY_JSON: {
+    /* --json reads a file on @: a space in front keeps it the text it is */
+    const char *text = o->body_text ? o->body_text : "{}";
+    char *safe = NULL;
+    if(text[0] == '@') {
+      size_t len = strlen(text) + 2;
+      safe = malloc(len);
+      if(safe)
+        snprintf(safe, len, " %s", text);
+    }
+    form_body_set(&r, BODY_JSON, NULL, safe ? safe : (text[0] == '@' ? "" : text), err, sizeof(err));
+    free(safe);
     break;
+  }
   case OAS_BODY_RAW:
     form_body_set(&r, BODY_RAW, NULL, o->body_text ? o->body_text : "", err, sizeof(err));
     break;
@@ -223,7 +260,7 @@ static jv *build_request(const oas_op *o, var_store *vars)
     break;
   case OAS_BODY_URLENC:
   case OAS_BODY_FORM:
-    field_rows(&o->body_rows, &rows);
+    field_rows(&o->body_rows, &rows, ROWS_BODY, unsafe);
     form_body_set(&r, o->body == OAS_BODY_URLENC ? BODY_URLENC : BODY_FORMDATA, &rows, NULL, err, sizeof(err));
     for(i = 0; i < rows.n; i++) {
       if(!rows.r[i].enabled) {
@@ -249,7 +286,7 @@ static jv *build_request(const oas_op *o, var_store *vars)
     }
     free(v);
   }
-  set_auth(&r, &h, o, vars, &cookies);
+  set_auth(&r, &h, o, vars, &cookies, unsafe);
   if(cookies) {
     add_opt(&r, "cookie", cookies);
     free(cookies);
@@ -310,9 +347,48 @@ static char *free_collection_name(const char *title, const char *const *taken, i
   return name;
 }
 
-static void set_up_envs(const oas_api *a, var_store *vars)
+/* A server's URL with its variables filled in: the value of a variable is not read again when it
+   runs, so {{x}} inside baseUrl would go out as it is. */
+static char *server_url(const oas_server *srv)
 {
-  int i, k;
+  const char *c = srv->url;
+  size_t cap = strlen(srv->url) * 5 + 16, w = 0;
+  int k;
+  char *out;
+  for(k = 0; k < srv->vars.n; k++)
+    if(srv->vars.f[k].value)
+      cap += (strlen(srv->url) / 2 + 1) * strlen(srv->vars.f[k].value);
+  out = malloc(cap);
+  if(!out)
+    return NULL;
+  while(*c) {
+    const char *end = *c == '{' ? strchr(c, '}') : NULL;
+    if(end) {
+      size_t len = (size_t)(end - c - 1);
+      const char *value = NULL;
+      for(k = 0; k < srv->vars.n; k++)
+        if(strlen(srv->vars.f[k].name) == len && !strncmp(srv->vars.f[k].name, c + 1, len))
+          value = srv->vars.f[k].value;
+      if(value)
+        w += (size_t)sprintf(out + w, "%s", value);
+      else {
+        char name[VAR_NAME_CAP], v[VAR_NAME_CAP];
+        snprintf(name, sizeof(name), "%.*s", (int)(len < sizeof(name) ? len : sizeof(name) - 1), c + 1);
+        var_name(name, v, sizeof(v));
+        w += (size_t)sprintf(out + w, "{{%s}}", v);
+      }
+      c = end + 1;
+    }
+    else
+      out[w++] = *c++;
+  }
+  out[w] = '\0';
+  return out;
+}
+
+static void set_up_envs(const oas_api *a, var_store *vars, oas_report *rep)
+{
+  int i;
   vars_init(vars);
   for(i = 0; i < a->nservers; i++) {
     const oas_server *s = &a->servers[i];
@@ -331,14 +407,17 @@ static void set_up_envs(const oas_api *a, var_store *vars)
     }
     if(e < 0)
       continue;
-    url = template_vars(s->url);
-    var_set(&vars->e[e], "baseUrl", url ? url : "", 0);
-    free(url);
-    for(k = 0; k < s->vars.n; k++) {
-      char v[VAR_NAME_CAP];
-      var_name(s->vars.f[k].name, v, sizeof(v));
-      var_set(&vars->e[e], v, s->vars.f[k].value ? s->vars.f[k].value : "", 0);
+    url = server_url(s);
+    /* left out, Run asks: a URL that begins so would reach curl as an option */
+    if(url && (url[0] == '-' || url[0] == '@'))
+      rep->unsafe++;
+    else if(url && !strstr(url, "://") && strncmp(url, "{{", 2)) {
+      if(!rep->relative_server)
+        rep->relative_server = oas_strdup(url);
     }
+    else if(url)
+      var_set(&vars->e[e], "baseUrl", url, 0);
+    free(url);
   }
 }
 
@@ -362,7 +441,11 @@ int oas_import_file(const char *path, const char *const *taken_names, int ntaken
     return -1;
   }
   jv_free(root);
-  name = free_collection_name(api.title ? api.title : "Imported API", taken_names, ntaken);
+  {
+    char title[201];
+    snprintf(title, sizeof(title), "%s", api.title && api.title[0] ? api.title : "Imported API");
+    name = free_collection_name(title, taken_names, ntaken);
+  }
   c = name ? coll_new(name) : NULL;
   free(name);
   if(!c) {
@@ -370,10 +453,10 @@ int oas_import_file(const char *path, const char *const *taken_names, int ntaken
     oas_api_free(&api);
     return -1;
   }
-  set_up_envs(&api, vars);
+  set_up_envs(&api, vars, rep);
   for(i = 0; i < api.nops; i++) {
     const oas_op *o = &api.ops[i];
-    jv *req = build_request(o, vars);
+    jv *req = build_request(o, vars, &rep->unsafe);
     coll_node *parent = folder_for(c->root, o);
     if(req && coll_add(parent, NODE_REQUEST, o->name ? o->name : o->path, req))
       rep->requests++;
@@ -391,6 +474,8 @@ int oas_import_file(const char *path, const char *const *taken_names, int ntaken
 void oas_report_free(oas_report *r)
 {
   oas_load_report_free(&r->load);
+  free(r->relative_server);
+  r->relative_server = NULL;
 }
 
 static size_t skipped(char *out, size_t n, size_t used, int *first, int count, const char *one, const char *many)
@@ -404,8 +489,17 @@ static size_t skipped(char *out, size_t n, size_t used, int *first, int count, c
 
 void oas_report_text(const oas_report *r, const char *coll_name, char *out, size_t n)
 {
-  size_t used = (size_t)snprintf(out, n, "Imported %d request%s into %s.", r->requests, r->requests == 1 ? "" : "s", coll_name);
+  size_t used = (size_t)snprintf(out, n, "Imported %d request%s into %.200s.", r->requests, r->requests == 1 ? "" : "s", coll_name);
   int first = 1, i;
+  /* first: of all of this, it is what must not be cut off */
+  for(i = 0; i < r->load.outside.n && used < n; i++)
+    used += (size_t)snprintf(out + used, n - used, "%s%s", i ? ", " : " It also read, from outside its folder: ", r->load.outside.s[i]);
+  if(r->load.outside.n && used < n)
+    used += (size_t)snprintf(out + used, n - used, ".");
+  if(r->unsafe && used < n)
+    used += (size_t)snprintf(out + used, n - used, " Left out %d part%s that could make curl read a file or take an option.", r->unsafe, r->unsafe == 1 ? "" : "s");
+  if(r->relative_server && used < n)
+    used += (size_t)snprintf(out + used, n - used, " Server %.200s has no host: give baseUrl a full URL.", r->relative_server);
   used = skipped(out, n, used, &first, r->webhooks, "webhook", "webhooks");
   used = skipped(out, n, used, &first, r->callbacks, "callback", "callbacks");
   used = skipped(out, n, used, &first, r->load.remote_refs, "remote $ref", "remote $refs");
@@ -418,17 +512,45 @@ void oas_report_text(const oas_report *r, const char *coll_name, char *out, size
   if(r->oauth && used < n)
     used += (size_t)snprintf(out + used, n - used, " OAuth is not run here: put a token in {{token}}.");
   if(r->xml_bodies && used < n)
-    used += (size_t)snprintf(out + used, n - used, " XML bodies start empty.");
-  for(i = 0; i < r->load.outside.n && used < n; i++)
-    used += (size_t)snprintf(out + used, n - used, "%s%s", i ? ", " : " It also read, from outside its folder: ", r->load.outside.s[i]);
-  if(r->load.outside.n && used < n)
-    snprintf(out + used, n - used, ".");
+    snprintf(out + used, n - used, " XML bodies start empty.");
+}
+
+/* A file that says what it is, even if it cannot be read: the reason is better than a box of text. */
+static int says_api(const char *text, size_t len)
+{
+  static const char *const keys[] = { "openapi", "swagger", "swaggerVersion" };
+  size_t i = 0, limit = len < 8192 ? len : 8192, k;
+  while(i < limit && strchr(" \t\r\n", text[i]))
+    i++;
+  if(i < limit && text[i] == '{') {
+    for(k = 0; k < 3; k++) {
+      size_t kl = strlen(keys[k]), p;
+      for(p = i; p + kl + 2 <= limit; p++)
+        if(text[p] == '"' && !strncmp(text + p + 1, keys[k], kl) && text[p + 1 + kl] == '"')
+          return 1;
+    }
+    return 0;
+  }
+  while(i < limit) {
+    size_t ls = i;
+    if(text[ls] == '"' || text[ls] == '\'')
+      ls++;
+    for(k = 0; k < 3; k++) {
+      size_t kl = strlen(keys[k]);
+      if(ls + kl < limit && !strncmp(text + ls, keys[k], kl) && strchr("\"':", text[ls + kl]))
+        return 1;
+    }
+    while(i < limit && text[i] != '\n')
+      i++;
+    i++;
+  }
+  return 0;
 }
 
 int oas_looks_like_api(const char *text, size_t len)
 {
   jv *v = yaml_parse(text, len, NULL, 0);
-  int yes = jv_kind(v) == JV_OBJ && (jv_get(v, "openapi") || jv_get(v, "swagger") || jv_get(v, "swaggerVersion"));
+  int yes = v ? jv_kind(v) == JV_OBJ && (jv_get(v, "openapi") || jv_get(v, "swagger") || jv_get(v, "swaggerVersion")) : says_api(text, len);
   jv_free(v);
   return yes;
 }

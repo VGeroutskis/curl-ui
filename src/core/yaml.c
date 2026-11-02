@@ -650,6 +650,8 @@ static jv *with_props(yp *p, int parent, int depth, int in_flow)
   size_t anchor_len = 0;
   int force_str = 0;
   jv *v;
+  if(depth > YAML_MAX_DEPTH)
+    return fail(p, "nested too deep");
   while(cur(p) == '&' || cur(p) == '!') {
     if(cur(p) == '&') {
       p->i++;
@@ -677,6 +679,8 @@ static jv *with_props(yp *p, int parent, int depth, int in_flow)
     while(cur(p) == ' ')
       p->i++;
   }
+  if(cur(p) == '*' || force_str)
+    p->after_key = 0;  /* block_node is what reads it */
   if(force_str && cur(p) != '"' && cur(p) != '\'' && cur(p) != '|' && cur(p) != '>') {
     sb b = { 0 };
     sb_add(&b, "", 0);
@@ -687,9 +691,9 @@ static jv *with_props(yp *p, int parent, int depth, int in_flow)
   else if(cur(p) == '*')
     v = use_alias(p);
   else if(in_flow)
-    v = flow_node(p, depth);
+    v = flow_node(p, depth + 1);
   else
-    v = block_node(p, parent, depth);
+    v = block_node(p, parent, depth + 1);
   if(v && anchor_name)
     remember(p, anchor_name, anchor_len, v);
   return v;

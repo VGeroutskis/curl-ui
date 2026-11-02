@@ -49,7 +49,7 @@ A file that cannot be read is refused with the reason and a line number, and not
 | First tag of an operation | Folder; no tag goes at the top |
 | Operation | Request named `summary`, else `operationId`, else `METHOD /path` |
 | `servers` / `host`+`basePath`+`schemes` / `basePath` | One environment per server, with `baseUrl`. No server at all: `baseUrl` is empty and Run asks for it |
-| Server variables | Variables in each environment, with their defaults |
+| Server variables | Filled into `baseUrl` with their defaults: the value of a variable is not read again at run time |
 | Path, path parameters | URL `{{baseUrl}}/pets/{{petId}}` |
 | Query parameters | Params rows: required on, optional off. Value from `example`, `default` or the first `enum`, else `{{name}}` |
 | Header parameters | Headers rows, same rule. `Accept`, `Content-Type` and `Authorization` as parameters are ignored, as the specs require |
