@@ -6,7 +6,10 @@
 #include "fileio.h"
 #include "fsdir.h"
 #include "oas_load.h"
+#include "oas_import.h"
 #include "oas_model.h"
+#include "options.h"
+#include "reqjson.h"
 #include "yaml.h"
 
 static int g_fail, g_checks;
@@ -663,6 +666,319 @@ static void swagger1(void)
   oas_api_free(&a);
 }
 
+/* ---- what it becomes ---- */
+
+typedef struct {
+  collection *c;
+  var_store vars;
+  oas_report rep;
+} imported;
+
+static int import_fix(const char *name, imported *im)
+{
+  char *p = fs_join(g_fix, name), err[512] = "";
+  int rc = oas_import_file(p, NULL, 0, &im->c, &im->vars, &im->rep, err, sizeof(err));
+  if(rc)
+    printf("cannot import %s: %s\n", name, err);
+  free(p);
+  return rc;
+}
+
+static int import_text(const char *yaml, imported *im)
+{
+  char *p = fs_join(g_scratch, "inline.yaml"), err[512] = "";
+  int rc;
+  file_write_private(p, yaml, strlen(yaml));
+  rc = oas_import_file(p, NULL, 0, &im->c, &im->vars, &im->rep, err, sizeof(err));
+  if(rc)
+    printf("cannot import: %s\n", err);
+  free(p);
+  return rc;
+}
+
+static void imported_free(imported *im)
+{
+  coll_free(im->c);
+  vars_free(&im->vars);
+  oas_report_free(&im->rep);
+}
+
+static coll_node *kid(coll_node *n, const char *name)
+{
+  int i;
+  for(i = 0; n && i < n->nkids; i++)
+    if(!strcmp(n->kids[i]->name, name))
+      return n->kids[i];
+  printf("no node %s\n", name);
+  g_fail++;
+  return NULL;
+}
+
+typedef struct {
+  request r;
+  form_hints h;
+  char method[16];
+} req_view;
+
+static int view(const coll_node *n, req_view *v)
+{
+  jv *extra = NULL;
+  request_init(&v->r);
+  form_hints_init(&v->h);
+  if(!n || !n->req || req_from_jv(n->req, &v->r, v->method, sizeof(v->method), &v->h, &extra)) {
+    g_fail++;
+    printf("cannot read a request\n");
+    return -1;
+  }
+  jv_free(extra);
+  return 0;
+}
+
+static void view_free(req_view *v)
+{
+  request_free(&v->r);
+  form_hints_free(&v->h);
+}
+
+static const char *val(const req_view *v, const char *opt, int i)
+{
+  int slot = request_find(&v->r, options_find(opt));
+  return slot >= 0 && i < v->r.sel[slot].nvalues ? v->r.sel[slot].values[i] : NULL;
+}
+
+static const char *env_value(const var_env *e, const char *name)
+{
+  const var_t *x = var_find(e, name);
+  return x ? x->value : NULL;
+}
+
+static void becomes(void)
+{
+  imported im;
+  req_view v;
+  coll_node *pets;
+  const var_t *x;
+  memset(&im, 0, sizeof(im));
+  if(import_fix("v3.0.0.yaml", &im)) {
+    CHECK(0);
+    return;
+  }
+  CHECK_STR(im.c->root->name, "Pet Store");
+  CHECK(im.rep.requests == 10);
+  /* folders_by_tag: and what has no tag is at the top */
+  pets = kid(im.c->root, "pets");
+  CHECK(pets && pets->kind == NODE_FOLDER && pets->nkids == 2);
+
+  /* url_has_baseurl_and_path_vars */
+  if(!view(kid(im.c->root, "GET /pets/{petId}"), &v)) {
+    CHECK_STR(v.r.url, "{{baseUrl}}/pets/{{petId}}?verbose=true");
+    CHECK_STR(v.method, "GET");
+    view_free(&v);
+  }
+  /* params_on_and_off, headers, cookie_param, bearer */
+  if(!view(kid(pets, "List pets"), &v)) {
+    CHECK_STR(v.r.url, "{{baseUrl}}/pets?limit=10");
+    CHECK(v.h.disabled_params.n == 1);
+    CHECK_STR(v.h.disabled_params.n ? v.h.disabled_params.r[0].key : NULL, "tag");
+    CHECK_STR(v.h.disabled_params.n ? v.h.disabled_params.r[0].value : NULL, "{{tag}}");
+    CHECK(v.h.disabled_headers.n == 1);
+    CHECK_STR(v.h.disabled_headers.n ? v.h.disabled_headers.r[0].key : NULL, "X-Trace");
+    CHECK_STR(val(&v, "cookie", 0), "sid={{sid}}");
+    CHECK(form_auth_kind(&v.r, &v.h) == AUTH_BEARER);
+    CHECK_STR(val(&v, "oauth2-bearer", 0), "{{token}}");
+    view_free(&v);
+  }
+  /* each_body_kind */
+  if(!view(kid(pets, "createPet"), &v)) {
+    CHECK(form_body_kind(&v.r) == BODY_JSON);
+    CHECK(val(&v, "json", 0) && strstr(val(&v, "json", 0), "Rex"));
+    CHECK(form_auth_kind(&v.r, &v.h) == AUTH_BASIC);
+    CHECK_STR(val(&v, "user", 0), "{{username}}:{{password}}");
+    view_free(&v);
+  }
+  if(!view(kid(im.c->root, "POST /upload"), &v)) {
+    CHECK_STR(val(&v, "form", 0), "file=@");     /* a file row with no path yet */
+    CHECK(v.h.disabled_body.n == 1);
+    CHECK_STR(v.h.disabled_body.n ? v.h.disabled_body.r[0].value : NULL, "mine");
+    CHECK(form_auth_kind(&v.r, &v.h) == AUTH_APIKEY);
+    CHECK(strstr(v.r.url, "api_key={{api_key}}") != NULL);
+    view_free(&v);
+  }
+  if(!view(kid(im.c->root, "POST /login"), &v)) {
+    CHECK_STR(val(&v, "data-urlencode", 0), "user={{user}}");
+    CHECK(form_auth_kind(&v.r, &v.h) == AUTH_DIGEST);
+    view_free(&v);
+  }
+  if(!view(kid(im.c->root, "PUT /raw"), &v)) {
+    CHECK_STR(val(&v, "data-raw", 0), "hello");
+    CHECK_STR(val(&v, "header", 0), "Content-Type: text/plain");
+    CHECK_STR(val(&v, "oauth2-bearer", 0), "{{token}}");
+    view_free(&v);
+  }
+  if(!view(kid(im.c->root, "PUT /bin"), &v)) {
+    CHECK_STR(val(&v, "data-binary", 0), "@");
+    CHECK_STR(val(&v, "header", 0), "Content-Type: application/octet-stream");
+    /* mutual TLS: cards with Browse, waiting for their files */
+    CHECK(request_find(&v.r, options_find("cert")) >= 0);
+    CHECK(request_find(&v.r, options_find("key")) >= 0);
+    view_free(&v);
+  }
+  /* each_auth_kind: header and cookie */
+  if(!view(kid(im.c->root, "GET /k0"), &v)) {
+    CHECK(form_auth_kind(&v.r, &v.h) == AUTH_APIKEY);
+    CHECK_STR(val(&v, "header", 0), "X-Api-Key: {{X-Api-Key}}");
+    view_free(&v);
+  }
+  if(!view(kid(im.c->root, "GET /k1"), &v)) {
+    CHECK_STR(val(&v, "cookie", 0), "session={{session}}");
+    view_free(&v);
+  }
+  /* environments_per_server, server_vars_in_env */
+  CHECK(im.vars.n == 2);
+  CHECK_STR(im.vars.e[0].name, "Production");
+  CHECK_STR(im.vars.e[1].name, "Local");
+  CHECK_STR(env_value(&im.vars.e[0], "baseUrl"), "https://{{env}}.example.com/v1");
+  CHECK_STR(env_value(&im.vars.e[0], "env"), "api");
+  CHECK_STR(env_value(&im.vars.e[1], "baseUrl"), "http://localhost:8080");
+  /* secrets_empty_and_secret: in each environment */
+  x = var_find(&im.vars.e[1], "token");
+  CHECK(x && x->secret && !x->value[0]);
+  x = var_find(&im.vars.e[0], "password");
+  CHECK(x && x->secret);
+  x = var_find(&im.vars.e[0], "X-Api-Key");
+  CHECK(x && x->secret);
+  x = var_find(&im.vars.e[0], "session");
+  CHECK(x && x->secret);
+  x = var_find(&im.vars.e[0], "username");
+  CHECK(x && !x->secret);
+  /* default_values_stay_plain */
+  x = var_find(&im.vars.e[0], "env");
+  CHECK(x && !x->secret);
+  imported_free(&im);
+}
+
+static void becomes_more(void)
+{
+  imported im;
+  req_view v;
+  char *p, err[256], text[512];
+  const char *taken[2];
+  collection *c = NULL;
+  var_store vs;
+  oas_report r;
+
+  /* no_server_baseurl_empty: not there, so Run asks for it; custom_method, names_made_valid, bare_operation */
+  memset(&im, 0, sizeof(im));
+  CHECK(!import_text("openapi: 3.2.0\ninfo: {title: T}\npaths:\n  /a/{pet id}:\n    additionalOperations:\n      COPY:\n        parameters:\n"
+                     "          - {name: 'my param!', in: query, required: true, schema: {type: string}}\n"
+                     "          - {name: X-A.b, in: header, required: true, schema: {type: string}}\n"
+                     "webhooks: {a: {}, b: {}}\n", &im));
+  CHECK(var_find(&im.vars.e[0], "baseUrl") == NULL);
+  CHECK(im.vars.n == 1);
+  if(!view(kid(im.c->root, "COPY /a/{pet id}"), &v)) {
+    CHECK(strstr(v.r.url, "{{baseUrl}}/a/{{pet_id}}") != NULL);
+    CHECK(strstr(v.r.url, "{{my_param_}}") != NULL);
+    CHECK_STR(val(&v, "header", 0), "X-A.b: {{X-A.b}}");
+    CHECK_STR(val(&v, "request", 0), "COPY");
+    view_free(&v);
+  }
+  CHECK(im.rep.webhooks == 2);
+  imported_free(&im);
+
+  /* a JSON media type of its own says so */
+  memset(&im, 0, sizeof(im));
+  CHECK(!import_text("openapi: 3.0.0\ninfo: {title: T}\npaths:\n  /a:\n    post:\n      requestBody:\n        content:\n          application/vnd.x+json: {example: {a: 1}}\n", &im));
+  if(!view(kid(im.c->root, "POST /a"), &v)) {
+    CHECK_STR(val(&v, "header", 0), "Content-Type: application/vnd.x+json");
+    view_free(&v);
+  }
+  imported_free(&im);
+
+  /* raw_query, and nested folders */
+  memset(&im, 0, sizeof(im));
+  CHECK(!import_text("openapi: 3.2.0\ninfo: {title: T}\ntags:\n  - {name: p, parent: e}\npaths:\n  /s:\n    get:\n      tags: [p]\n      parameters:\n        - {name: q, in: querystring}\n", &im));
+  if(!view(kid(kid(im.c->root, "e"), "p")->kids[0], &v)) {
+    CHECK_STR(v.r.url, "{{baseUrl}}/s?{{q}}");
+    view_free(&v);
+  }
+  imported_free(&im);
+
+  /* two servers of the same name */
+  memset(&im, 0, sizeof(im));
+  CHECK(!import_text("openapi: 3.0.0\ninfo: {title: T}\nservers:\n  - {url: 'http://a', description: Same}\n  - {url: 'http://b', description: Same}\npaths: {}\n", &im));
+  CHECK(im.vars.n == 2);
+  CHECK_STR(im.vars.e[1].name, "Same 2");
+  CHECK_STR(env_value(&im.vars.e[1], "baseUrl"), "http://b");
+  imported_free(&im);
+
+  /* collection_name_taken */
+  p = fs_join(g_fix, "v2.0.yaml");
+  taken[0] = "Pet Store";
+  taken[1] = "Pet Store 2";
+  memset(&r, 0, sizeof(r));
+  CHECK(!oas_import_file(p, taken, 2, &c, &vs, &r, err, sizeof(err)));
+  CHECK_STR(c ? c->root->name : NULL, "Pet Store 3");
+  CHECK(r.requests == 7);
+  if(c) {
+    coll_free(c);
+    vars_free(&vs);
+  }
+  oas_report_free(&r);
+  free(p);
+
+  /* refused: nothing made */
+  p = fs_join(g_fix, "refs/same.yaml");
+  c = NULL;
+  memset(&r, 0, sizeof(r));
+  err[0] = '\0';
+  CHECK(oas_import_file(p, NULL, 0, &c, &vs, &r, err, sizeof(err)) == -1);
+  CHECK(c == NULL && err[0]);
+  oas_report_free(&r);
+  free(p);
+
+  /* report_text */
+  memset(&r, 0, sizeof(r));
+  r.requests = 42;
+  r.webhooks = 2;
+  r.load.remote_refs = 1;
+  oas_report_text(&r, "Pet Store", text, sizeof(text));
+  CHECK_STR(text, "Imported 42 requests into Pet Store. Skipped: 2 webhooks, 1 remote $ref.");
+  memset(&r, 0, sizeof(r));
+  r.requests = 1;
+  oas_report_text(&r, "T", text, sizeof(text));
+  CHECK_STR(text, "Imported 1 request into T.");
+  /* report_outside_files */
+  memset(&r, 0, sizeof(r));
+  r.requests = 2;
+  r.oauth = 1;
+  r.callbacks = 1;
+  {
+    str_list l;
+    char *s = malloc(16);
+    strcpy(s, "/etc/x.yaml");
+    l.s = malloc(sizeof(char *));
+    l.s[0] = s;
+    l.n = 1;
+    r.load.outside = l;
+    oas_report_text(&r, "T", text, sizeof(text));
+    CHECK(strstr(text, "Skipped: 1 callback.") != NULL);
+    CHECK(strstr(text, "OAuth") != NULL);
+    CHECK(strstr(text, "/etc/x.yaml") != NULL);
+    str_list_free(&l);
+  }
+
+  /* looks_like_api_json_yaml_and_not_curl */
+  {
+    static const char *const yes[] = { "openapi: 3.1.0\n", "swagger: '2.0'\n", "{\"swaggerVersion\":\"1.2\"}", "{\"openapi\":\"3.0.0\"}", "# c\n---\nopenapi: 3.0.0\n" };
+    static const char *const no[] = { "curl https://x -H 'A: b'", "", "a: 1\n", "curl -d '{\"openapi\":1}' http://x" };
+    size_t i;
+    for(i = 0; i < sizeof(yes) / sizeof(yes[0]); i++)
+      CHECK(oas_looks_like_api(yes[i], strlen(yes[i])));
+    for(i = 0; i < sizeof(no) / sizeof(no[0]); i++)
+      CHECK(!oas_looks_like_api(no[i], strlen(no[i])));
+  }
+}
+
 int main(int argc, char **argv)
 {
   if(argc < 3) {
@@ -688,6 +1004,8 @@ int main(int argc, char **argv)
   samples();
   swagger2();
   swagger1();
+  becomes();
+  becomes_more();
   printf("%d checks, %d failed\n", g_checks, g_fail);
   return g_fail ? 1 : 0;
 }
