@@ -1,4 +1,7 @@
 /* curl UI: the SDL window, event loop, and the scripted test hooks. */
+#ifdef __linux__
+#define _DEFAULT_SOURCE  /* unsetenv */
+#endif
 #define NK_IMPLEMENTATION
 #define NK_SDL_RENDERER_IMPLEMENTATION
 #include <SDL.h>
@@ -570,9 +573,15 @@ static const char usage[] =
   "  README.md lists the options for tabs, variables, forms and collections\n"
   "  --stats             print UI time per frame on exit\n";
 
+#define DECOR_RESTART_ENV "CURLUI_PRELOAD_WAS"
+
 int main(int argc, char **argv)
 {
   app_t *a = &g_app;
+#ifdef __linux__
+  const char *preload_was = getenv(DECOR_RESTART_ENV);
+  int decor_restarted = preload_was != NULL;
+#endif
   script_op ops[MAX_SCRIPT];
   int win_size_given = 0;
   int nops = 0, no_wait = 0, want_log = 0, light = 0, stats = 0, win_w = 1360, win_h = 840, i;
@@ -588,6 +597,15 @@ int main(int argc, char **argv)
   int have_held = 0;
   Uint32 render_flags = SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC;
 
+#ifdef __linux__
+  if(decor_restarted) {
+    if(*preload_was)
+      SDL_setenv("LD_PRELOAD", preload_was, 1);
+    else
+      unsetenv("LD_PRELOAD");
+    unsetenv(DECOR_RESTART_ENV);
+  }
+#endif
   pick_workdir();
   app_init(a);
   g_trace = getenv("CURLUI_TRACE") != NULL;
@@ -934,14 +952,21 @@ int main(int argc, char **argv)
      GNOME draws no title bars for clients: libdecor does, and our own bar needs neither. */
   if(getenv("WAYLAND_DISPLAY") && !getenv("SDL_VIDEODRIVER")) {
     void *decor;
-    /* Loaded first by its full path, the system's libdecor is the one SDL then gets by name,
-       and it stays loaded. An AppImage's own would find no plugins on another distribution. */
-    if(a->set.native_frame && getenv("APPIMAGE")) {
+    /* An AppImage's libdecor is older than the system's plugins and cannot load them, and SDL
+       has it from the start. So it starts once more with the system's in its place: a preload
+       is the only thing that comes first. It is undone at the top of main, curl must not get it. */
+    if(a->set.native_frame && getenv("APPIMAGE") && !decor_restarted) {
       char lib[SETTINGS_PATH_CAP], plugins[SETTINGS_PATH_CAP];
-      if(libdecor_find(lib, sizeof(lib), plugins, sizeof(plugins)) && SDL_LoadObject(lib))
-        SDL_setenv("LIBDECOR_PLUGIN_DIR", plugins, 0);
-      else
-        no_system_bar = 1;
+      if(libdecor_find(lib, sizeof(lib), plugins, sizeof(plugins))) {
+        const char *was = getenv("LD_PRELOAD");
+        char preload[SETTINGS_PATH_CAP * 2];
+        snprintf(preload, sizeof(preload), "%s%s%s", lib, was && *was ? ":" : "", was ? was : "");
+        SDL_setenv(DECOR_RESTART_ENV, was ? was : "", 1);
+        SDL_setenv("LD_PRELOAD", preload, 1);
+        SDL_setenv("LIBDECOR_PLUGIN_DIR", plugins, 1);
+        execv("/proc/self/exe", argv);
+      }
+      no_system_bar = 1;
     }
     decor = SDL_LoadObject("libdecor-0.so.0");
     if(decor) {
