@@ -1,0 +1,2 @@
+a: {$ref: '#/d', description: mine}
+d: {description: orig, x: 1}

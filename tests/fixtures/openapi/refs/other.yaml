@@ -1,0 +1,1 @@
+p: {$ref: 'sub/two.yaml#/t'}

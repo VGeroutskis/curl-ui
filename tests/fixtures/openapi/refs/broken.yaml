@@ -1,0 +1,2 @@
+a: {$ref: '#/nope'}
+b: {$ref: 'missing.yaml'}

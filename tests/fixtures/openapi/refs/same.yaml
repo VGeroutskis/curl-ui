@@ -1,0 +1,11 @@
+a: {$ref: '#/defs/x'}
+b: {$ref: '#/defs/a~1b'}
+c: {$ref: '#/defs/c~0d'}
+d: {$ref: '#/defs/%7Bid%7D'}
+e: {$ref: '#/list/1'}
+defs:
+  x: {v: 1}
+  a/b: {v: 2}
+  c~d: {v: 3}
+  '{id}': {v: 4}
+list: [zero, {v: 5}]

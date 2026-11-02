@@ -1,0 +1,4 @@
+r: {$ref: '#/defs/n'}
+defs:
+  n:
+    next: {$ref: '#/defs/n'}

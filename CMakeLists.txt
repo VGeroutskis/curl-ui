@@ -35,7 +35,7 @@ add_library(curlui_core STATIC
   src/core/curlinfo.c src/core/docs.c src/core/settings.c
   src/core/json.c src/core/fileio.c src/core/argfile.c
   src/core/urlquery.c src/core/vars.c src/core/mask.c src/core/forms.c
-  src/core/reqjson.c src/core/collection.c src/core/history.c src/core/cmdparse.c src/core/fsdir.c src/core/yaml.c)
+  src/core/reqjson.c src/core/collection.c src/core/history.c src/core/cmdparse.c src/core/fsdir.c src/core/yaml.c src/core/oas_load.c)
 target_include_directories(curlui_core PUBLIC src/core)
 target_link_libraries(curlui_core PUBLIC Threads::Threads)
 if(NOT WIN32)
@@ -68,6 +68,9 @@ add_test(NAME api COMMAND test_api ${CMAKE_CURRENT_BINARY_DIR}/api-scratch)
 add_executable(test_yaml tests/test_yaml.c)
 target_link_libraries(test_yaml PRIVATE curlui_core)
 add_test(NAME yaml COMMAND test_yaml)
+add_executable(test_openapi tests/test_openapi.c)
+target_link_libraries(test_openapi PRIVATE curlui_core)
+add_test(NAME openapi COMMAND test_openapi ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/openapi ${CMAKE_CURRENT_BINARY_DIR}/openapi-scratch)
 add_executable(test_fsdir tests/test_fsdir.c)
 target_link_libraries(test_fsdir PRIVATE curlui_core)
 add_test(NAME fsdir COMMAND test_fsdir ${CMAKE_CURRENT_BINARY_DIR}/fsdir-scratch)
