@@ -503,7 +503,7 @@ static int write_dump(app_t *a, const char *path)
         context_panel_names(a, CUR(a));
         for(i = 0; i < a->panel_names.n; i++) {
           const var_t *v = var_find(env, a->panel_names.s[i]);
-          fprintf(f, "%s%s:%s", i ? "," : "", a->panel_names.s[i], !v ? "missing" : v->secret ? "********" : v->value);
+          fprintf(f, "%s%s:%s", i ? "," : "", a->panel_names.s[i], !v || (v->secret && !v->value[0]) ? "missing" : v->secret ? "********" : v->value);
         }
       }
       fputc('\n', f);
@@ -979,6 +979,11 @@ int main(int argc, char **argv)
       SDL_setenv("SDL_VIDEODRIVER", "wayland", 1);  /* the hint needs SDL 2.0.22 */
     }
   }
+#endif
+#ifdef __linux__
+  /* an AppImage's older xkbcommon complains of what the system's Compose file says */
+  if(getenv("APPIMAGE"))
+    SDL_setenv("XKB_LOG_LEVEL", "critical", 0);
 #endif
   if(SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS)) {
     SDL_setenv("SDL_VIDEODRIVER", "", 1);

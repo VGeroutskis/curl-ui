@@ -135,7 +135,6 @@ static void set_auth(request *r, form_hints *h, const oas_op *o, var_store *vars
   case OAS_AUTH_BASIC:
   case OAS_AUTH_DIGEST:
     form_auth_set(r, h, o->auth == OAS_AUTH_BASIC ? AUTH_BASIC : AUTH_DIGEST, "{{username}}", "{{password}}", NULL, err, sizeof(err));
-    want_secret(vars, "username", 0);
     want_secret(vars, "password", 1);
     break;
   case OAS_AUTH_BEARER:

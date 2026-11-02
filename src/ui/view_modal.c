@@ -18,7 +18,10 @@ void modal_open_missing(app_t *a, str_list *names)
   for(i = 0; i < n; i++) {
     a->modal_caps[i] = 256;
     a->modal_values[i] = calloc(1, a->modal_caps[i]);
-    a->modal_secret[i] = vars_suggest_secret(a->modal_names.s[i]);
+    {
+      const var_t *known = var_find(app_tab_env(a, CUR(a)), a->modal_names.s[i]);
+      a->modal_secret[i] = vars_suggest_secret(a->modal_names.s[i]) || (known && known->secret);
+    }
   }
   a->modal_open = 1;
   a->pending_unfocus = 1;

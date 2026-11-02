@@ -189,11 +189,11 @@ until you press Run, and the notice bar says what was made and what was left out
 | A request body | JSON from its example or schema; rows of URL encoded or Form data; Raw; or File |
 
 `$ref` is followed within the file and to files beside it. Files outside the folder of the first are named
-in the report. A name that cannot be a variable has `_` for what it cannot hold. Secret variables start empty.
+in the report. A name that cannot be a variable has `_` for what it cannot hold. 
 
 What a file says stays text. It cannot make curl read a local file or take an option: a header name that is
 not one, or a server beginning with `-`, is left out and counted in the report, and the file of a File row is
-yours to choose, whatever its example says.
+yours to choose, whatever its example says. Secret variables start with no value, and Run asks for them, as for any that is missing.
 
 ### Screenshots
 

@@ -8,7 +8,15 @@
 void context_panel_names(app_t *a, tab_t *t)
 {
   var_env none;
-  unsigned long sig = form_request_sig(&t->req);
+  unsigned long sig = 2166136261u;
+  int i;
+  const char *c;
+  /* of what the names come from: opened by a click, the request is new before these are */
+  for(i = 0; i < t->args_tmpl.count; i++) {
+    for(c = t->args_tmpl.tok[i].text; *c; c++)
+      sig = (sig ^ (unsigned char)*c) * 16777619u;
+    sig = (sig ^ 0xFF) * 16777619u;
+  }
   if(a->panel_tab == t && a->panel_sig == sig && a->panel_tab)
     return;
   str_list_free(&a->panel_names);
@@ -91,7 +99,7 @@ void view_context(app_t *a, struct nk_rect r)
     const var_t *v = var_find(env, a->panel_names.s[i]);
     if(y + 44 >= list.y && y <= list.y + list.h) {
       ui_text_fit(a, a->f.mono_small, x, y, 18, w, a->panel_names.s[i], p->accent);
-      if(!v)
+      if(!v || (v->secret && !v->value[0]))
         ui_text_fit(a, a->f.small, x, y + 18, 18, w, "missing: Run will ask for it", p->amber);
       else if(v->secret)
         ui_text_fit(a, a->f.mono_small, x, y + 18, 18, w, "********", p->dim);

@@ -93,7 +93,7 @@ def main():
             del seen[:]
             values = ["--var", "baseUrl=" + base, "--var", "petId=7", "--var", "user=me", "--var", "sid=s1",
                       "--secret", "token=tk", "--var", "username=u", "--secret", "password=p",
-                      "--secret", "X-Api-Key=kk", "--secret", "api_key=qq"]
+                      "--secret", "X-Api-Key=kk", "--secret", "api_key=qq", "--secret", "Authorization=az"]
             text = app(home, "--open-node", ids[name], *values, *more, "--click", RUN)
             if not seen:
                 print("nothing arrived for %s: %s" % (name, field(text, "command")))
@@ -156,6 +156,41 @@ def main():
         check("Imported" in field(text, "notice"), "the Import dialog takes a file: %s" % field(text, "notice"))
         check(field(text, "picker") == "0", "the picker closed")
         check("coll_top_nodes=0" not in text, "the tree has it")
+
+        # as a person opens them, by a click in the tree
+        home = os.path.join(tmp, "h-hand")
+        sample = os.path.join(tmp, "hand.yaml")
+        with open(sample, "w", encoding="utf-8") as f:
+            f.write("openapi: 3.1.0\ninfo: {title: Hand}\nservers:\n  - {url: '%s'}\npaths:\n"
+                    "  /bearer:\n    get:\n      summary: Bearer\n      security: [{t: []}]\n"
+                    "  /basic:\n    get:\n      summary: Basic\n      security: [{b: []}]\n"
+                    "  /up:\n    post:\n      summary: Up\n      requestBody:\n        content:\n          multipart/form-data:\n"
+                    "            schema: {required: [file], properties: {file: {type: string, format: binary}}}\n"
+                    "components:\n  securitySchemes:\n    t: {type: http, scheme: bearer}\n    b: {type: http, scheme: basic}\n" % base)
+        app(home, "--import-openapi", sample)
+        ids = nodes(home)
+        # My requests at y 203, then the collection, then its requests
+        text = app(home, "--click", "90,255", "--form", "params")
+        check(field(text, "title") == "Bearer", "a click in the tree opens it: %s" % field(text, "title"))
+        check("token:missing" in field(text, "panel_vars") and "baseUrl:" + base in field(text, "panel_vars"),
+              "This request lists its variables: %s" % field(text, "panel_vars"))
+        # Run asks for what sign-in needs, rather than sending it empty
+        del seen[:]
+        text = app(home, "--open-node", ids["Bearer"], "--click", RUN)
+        check(field(text, "modal") == "1" and "token" in field(text, "modal_missing") and not seen, "Run asks for the token: %s" % field(text, "modal_missing"))
+        check(field(text, "modal_secret") == "1", "as a secret")
+        text = app(home, "--open-node", ids["Bearer"], "--click", RUN, "--modal-value", "token=abc", "--modal-action", "save")
+        check(field(text, "modal") == "0", "the answer is kept")
+        del seen[:]
+        text = app(home, "--open-node", ids["Bearer"], "--click", RUN)
+        check(seen and seen[-1]["headers"].get("authorization") == "Bearer abc", "and sent")
+        del seen[:]
+        text = app(home, "--open-node", ids["Basic"], "--click", RUN)
+        check(field(text, "modal_missing") == "username,password" and not seen, "both of basic: %s" % field(text, "modal_missing"))
+        # a file row with no path says so, not exit 26
+        del seen[:]
+        text = app(home, "--open-node", ids["Up"], "--click", RUN)
+        check("Choose a file" in field(text, "notice") and field(text, "had_result") == "0", "no file chosen: %s, had_result %s" % (field(text, "notice")[:50], field(text, "had_result")))
 
         # a variable cannot turn the URL into an option of curl
         home = os.path.join(tmp, "h-dash")

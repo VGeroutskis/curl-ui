@@ -68,7 +68,7 @@ int env_rename(var_store *s, int i, const char *name);
 int env_remove(var_store *s, int i);            /* refuses the last one */
 int vars_suggest_secret(const char *name);
 
-/* Names used in args that e does not have: once each, in order of use. */
+/* Names used in args that e does not have, or has as a secret with no value: once each, in order of use. */
 int vars_missing(const var_env *e, const arg_list *tmpl, str_list *out);
 void str_list_free(str_list *l);
 /* What tmpl uses and to does not have comes over from from: a request moving to another

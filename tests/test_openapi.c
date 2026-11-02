@@ -852,8 +852,7 @@ static void becomes(void)
   CHECK(x && x->secret);
   x = var_find(&im.vars.e[0], "session");
   CHECK(x && x->secret);
-  x = var_find(&im.vars.e[0], "username");
-  CHECK(x && !x->secret);
+  CHECK(var_find(&im.vars.e[0], "username") == NULL);  /* Run asks */
   /* default_values_stay_plain */
   x = var_find(&im.vars.e[0], "baseUrl");
   CHECK(x && !x->secret);
@@ -1349,11 +1348,35 @@ static void review_alias_after_key(void)
   jv_free(v);
 }
 
+static void review_empty_secret_is_missing(void)
+{
+  var_store st;
+  var_env *e;
+  arg_list args;
+  str_list out;
+  request r;
+  vars_init(&st);
+  e = &st.e[0];
+  var_set(e, "tok", "", 1);
+  var_set(e, "plain", "", 0);
+  var_set(e, "full", "x", 1);
+  request_init(&r);
+  request_set_url(&r, "http://h/{{tok}}/{{plain}}/{{full}}");
+  CHECK(!builder_build(&r, "curl", &args));
+  CHECK(!vars_missing(e, &args, &out));
+  CHECK(out.n == 1);
+  CHECK_STR(out.n ? out.s[0] : NULL, "tok");
+  str_list_free(&out);
+  arg_list_free(&args);
+  request_free(&r);
+  vars_free(&st);
+}
+
 static const struct { const char *name; void (*fn)(void); } g_review[] = {
   { "template", review_template_overflow }, { "props", review_props_recursion }, { "mutation", review_type_mutation },
   { "bomb", review_model_bomb }, { "reads", review_no_file_reads }, { "servers", review_server_urls },
   { "damaged", review_damaged_says_so }, { "nopaths", review_no_paths_refused }, { "unc", review_unc_ref },
-  { "fifo", review_fifo_ref }, { "outside", review_report_names_outside }, { "alias", review_alias_after_key },
+  { "fifo", review_fifo_ref }, { "outside", review_report_names_outside }, { "alias", review_alias_after_key }, { "emptysecret", review_empty_secret_is_missing },
 };
 
 int main(int argc, char **argv)

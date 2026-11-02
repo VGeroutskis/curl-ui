@@ -260,7 +260,9 @@ int vars_missing(const var_env *e, const arg_list *tmpl, str_list *out)
       continue;
     while((p = next_var(s, &name, &n)) != NULL) {
       s = name + n + 2;
-      if(!var_find_n(e, name, n) && !list_has(out, name, n)) {
+      /* a secret with no value is one still to be given: sent empty it is only ever a failure */
+      const var_t *known = var_find_n(e, name, n);
+      if((!known || (known->secret && !known->value[0])) && !list_has(out, name, n)) {
         char **grown = realloc(out->s, sizeof(char *) * (size_t)(out->n + 1));
         char *copy = malloc(n + 1);
         if(!grown || !copy) {

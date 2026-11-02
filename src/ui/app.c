@@ -330,6 +330,21 @@ void app_run(app_t *a)
     CUR(a)->out_tab = TAB_RESPONSE;
     return;
   }
+  /* An empty path would reach curl as exit 26: the place to fill it is in the form. */
+  {
+    const arg_list *real = &CUR(a)->args_real;
+    int form = options_find("form"), bin = options_find("data-binary"), k;
+    for(k = 0; k < real->count; k++) {
+      const arg_token *tok = &real->tok[k];
+      size_t len = strlen(tok->text);
+      if(tok->kind == TOK_VALUE && ((tok->opt == form && len >= 2 && !strcmp(tok->text + len - 2, "=@")) ||
+                                    (tok->opt == bin && !strcmp(tok->text, "@")))) {
+        CUR(a)->form = FORM_BODY;
+        app_notice(a, "Choose a file first: press Browse in the Body. Nothing was run.");
+        return;
+      }
+    }
+  }
   /* A value can make a URL begin with -: curl would take it for an option. Written so in the bar,
      the builder puts --url in front; through a variable it can only be stopped here. */
   {
