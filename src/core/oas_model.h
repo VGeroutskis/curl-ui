@@ -55,6 +55,7 @@ char *oas_sample(const jv *schema);
 /* Dispatches by version. err names what was found when it is none of them. */
 int oas_read(const jv *root, oas_api *out, char *err, size_t errn);
 int oas_read3(const jv *root, oas_api *out, char *err, size_t errn);
+int oas_read2(const jv *root, oas_api *out, char *err, size_t errn);
 
 /* For the readers. */
 char *oas_strdup(const char *s);        /* NULL stays NULL */

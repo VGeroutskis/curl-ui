@@ -511,6 +511,83 @@ static void samples(void)
   }
 }
 
+static void swagger2(void)
+{
+  oas_api a, b;
+  oas_op *o;
+  const oas_field *f;
+  char err[256];
+  if(read_fixture("v2.0.yaml", &a) || read_fixture("v2.0.json", &b)) {
+    CHECK(0);
+    return;
+  }
+  {
+    char *x = dump(&a), *y = dump(&b);
+    CHECK_STR(x, y);
+    free(x);
+    free(y);
+  }
+  oas_api_free(&b);
+  CHECK_STR(a.title, "Pet Store");
+  /* s2_host_basepath_schemes */
+  CHECK(a.nservers == 2);
+  CHECK_STR(a.servers[0].url, "https://api.example.com/v1");
+  CHECK_STR(a.servers[1].url, "http://api.example.com/v1");
+  o = op(&a, "GET", "/pets");
+  CHECK_STR(o->name, "List pets");
+  CHECK_STR(o->folders[0], "pets");
+  f = field(&o->query, "limit");
+  CHECK(f && f->required);
+  CHECK_STR(f ? f->value : NULL, "10");
+  CHECK(field(&o->headers, "Accept") == NULL);
+  CHECK(field(&o->headers, "X-Trace") != NULL);
+  /* s2_body_param, through a definition */
+  o = op(&a, "POST", "/pets");
+  CHECK(o->body == OAS_BODY_JSON && o->body_text && strstr(o->body_text, "\"Rex\""));
+  CHECK_STR(o->content_type, "application/json");
+  CHECK(o->auth == OAS_AUTH_BASIC);
+  o = op(&a, "GET", "/pets/{petId}");
+  f = field(&o->query, "verbose");
+  CHECK(o->query.n == 1 && f && f->required);
+  CHECK(o->auth == OAS_AUTH_NONE);
+  /* s2_formdata_file, s2_consumes_operation_over_top */
+  o = op(&a, "POST", "/upload");
+  CHECK(o->body == OAS_BODY_FORM);
+  f = field(&o->body_rows, "file");
+  CHECK(f && f->required && f->is_file);
+  f = field(&o->body_rows, "title");
+  CHECK_STR(f ? f->value : NULL, "mine");
+  CHECK(o->auth == OAS_AUTH_KEY_QUERY);
+  o = op(&a, "POST", "/login");
+  CHECK(o->body == OAS_BODY_URLENC);
+  o = op(&a, "PUT", "/raw");
+  CHECK(o->body == OAS_BODY_RAW);
+  CHECK_STR(o->body_text, "hello");
+  CHECK_STR(o->content_type, "text/plain");
+  CHECK(o->auth == OAS_AUTH_OAUTH);
+  /* s2_security_definitions: top level applies */
+  o = op(&a, "GET", "/k0");
+  CHECK(o->auth == OAS_AUTH_KEY_HEADER);
+  CHECK_STR(o->auth_name, "X-Api-Key");
+  CHECK(a.alternatives_dropped == 1);
+  oas_api_free(&a);
+  /* s2_no_host_empty_base */
+  CHECK(!read_text("swagger: '2.0'\ninfo: {title: T}\npaths: {}\n", &a, err, sizeof(err)));
+  CHECK(a.nservers == 0);
+  oas_api_free(&a);
+  CHECK(!read_text("swagger: '2.0'\ninfo: {title: T}\nbasePath: /v2\npaths: {}\n", &a, err, sizeof(err)));
+  CHECK(a.nservers == 1);
+  CHECK_STR(a.nservers ? a.servers[0].url : NULL, "/v2");
+  oas_api_free(&a);
+  /* no schemes: https */
+  CHECK(!read_text("swagger: 2.0\ninfo: {title: T}\nhost: h\npaths: {}\n", &a, err, sizeof(err)));
+  CHECK_STR(a.nservers ? a.servers[0].url : NULL, "https://h");
+  oas_api_free(&a);
+  CHECK(read_text("swagger: '9.9'\n", &a, err, sizeof(err)));
+  CHECK(strstr(err, "9.9") != NULL);
+  oas_api_free(&a);
+}
+
 int main(int argc, char **argv)
 {
   if(argc < 3) {
@@ -534,6 +611,7 @@ int main(int argc, char **argv)
   mapping_3x();
   versions_3x();
   samples();
+  swagger2();
   printf("%d checks, %d failed\n", g_checks, g_fail);
   return g_fail ? 1 : 0;
 }

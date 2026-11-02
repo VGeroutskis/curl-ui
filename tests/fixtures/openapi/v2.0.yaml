@@ -1,0 +1,98 @@
+swagger: "2.0"
+info:
+  title: Pet Store
+  version: 1.0.0
+host: api.example.com
+basePath: /v1
+schemes: [https, http]
+consumes: [application/json]
+security:
+  - key_header: []
+tags:
+  - name: pets
+paths:
+  /pets:
+    get:
+      tags: [pets]
+      summary: List pets
+      security:
+        - bearer: []
+      parameters:
+        - {name: limit, in: query, required: true, type: integer, default: 10}
+        - {name: tag, in: query, type: string}
+        - {name: X-Trace, in: header, type: string}
+        - {name: Accept, in: header, type: string}
+      responses:
+        '200': {description: ok}
+    post:
+      tags: [pets]
+      operationId: createPet
+      security:
+        - basic: []
+      parameters:
+        - name: body
+          in: body
+          required: true
+          schema:
+            $ref: '#/definitions/Pet'
+      responses:
+        '200': {description: ok}
+  /pets/{petId}:
+    parameters:
+      - {name: petId, in: path, required: true, type: string}
+      - {name: verbose, in: query, type: boolean, default: false}
+    get:
+      security: []
+      parameters:
+        - {name: verbose, in: query, required: true, type: boolean, default: true}
+      responses:
+        '200': {description: ok}
+  /upload:
+    post:
+      consumes: [multipart/form-data]
+      security:
+        - key_query: []
+      parameters:
+        - {name: title, in: formData, type: string, default: mine}
+        - {name: file, in: formData, required: true, type: file}
+      responses:
+        '200': {description: ok}
+  /login:
+    post:
+      consumes: [application/x-www-form-urlencoded]
+      parameters:
+        - {name: user, in: formData, required: true, type: string}
+      responses:
+        '200': {description: ok}
+  /raw:
+    put:
+      consumes: [text/plain]
+      security:
+        - oauth: []
+        - basic: []
+      parameters:
+        - name: text
+          in: body
+          schema: {type: string, example: hello}
+      responses:
+        '200': {description: ok}
+  /k0:
+    get:
+      responses:
+        '200': {description: ok}
+definitions:
+  Pet:
+    type: object
+    properties:
+      name: {type: string, example: Rex}
+      age: {type: integer}
+securityDefinitions:
+  bearer: {type: apiKey, in: header, name: Authorization}
+  basic: {type: basic}
+  key_header: {type: apiKey, in: header, name: X-Api-Key}
+  key_query: {type: apiKey, in: query, name: api_key}
+  oauth:
+    type: oauth2
+    flow: application
+    tokenUrl: https://example.com/token
+    scopes: {}

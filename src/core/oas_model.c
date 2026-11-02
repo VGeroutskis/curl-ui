@@ -324,6 +324,13 @@ int oas_read(const jv *root, oas_api *out, char *err, size_t errn)
     snprintf(err, errn, "OpenAPI version %s is not one this app knows", version);
     return -1;
   }
+  if(jv_get(root, "swagger")) {
+    describe(jv_get(root, "swagger"), version, sizeof(version));
+    if(version[0] == '2' && (version[1] == '.' || !version[1]))
+      return oas_read2(root, out, err, errn);
+    snprintf(err, errn, "Swagger version %s is not one this app knows", version);
+    return -1;
+  }
   snprintf(err, errn, "This is not an API description: it has no openapi or swagger field");
   return -1;
 }
