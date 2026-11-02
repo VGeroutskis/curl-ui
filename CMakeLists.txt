@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
 # must precede project() to take effect
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.13" CACHE STRING "Oldest macOS supported")
-project(curl-ui VERSION 0.4.0
+project(curl-ui VERSION 0.5.0
   HOMEPAGE_URL "https://github.com/VGeroutskis/curl-ui" LANGUAGES C)
 
 set(CMAKE_C_STANDARD 11)
