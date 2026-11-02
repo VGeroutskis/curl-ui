@@ -1,0 +1,175 @@
+openapi: 3.1.0
+info:
+  title: Pet Store
+  version: 1.0.0
+servers:
+  - url: https://{env}.example.com/v1
+    description: Production
+    variables:
+      env:
+        default: api
+  - url: http://localhost:8080
+    description: Local
+tags:
+  - name: pets
+security:
+  - key_header: []
+paths:
+  /pets:
+    get:
+      tags: [pets]
+      summary: List pets
+      security:
+        - bearer: []
+      parameters:
+        - name: limit
+          in: query
+          required: true
+          example: 10
+          schema: {type: integer}
+        - name: tag
+          in: query
+          schema: {type: string}
+        - name: X-Trace
+          in: header
+          schema: {type: string}
+        - name: Accept
+          in: header
+          schema: {type: string}
+        - name: sid
+          in: cookie
+          schema: {type: string}
+      responses:
+        '200': {description: ok}
+    post:
+      tags: [pets]
+      operationId: createPet
+      security:
+        - basic: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Pet'
+      callbacks:
+        onDone:
+          '{$request.body#/url}':
+            post:
+              responses:
+                '200': {description: ok}
+      responses:
+        '200': {description: ok}
+  /pets/{petId}:
+    parameters:
+      - name: petId
+        in: path
+        required: true
+        schema: {type: string}
+      - name: verbose
+        in: query
+        schema: {type: boolean, default: false}
+    get:
+      security: []
+      parameters:
+        - name: verbose
+          in: query
+          required: true
+          schema: {type: boolean, default: true}
+      responses:
+        '200': {description: ok}
+  /upload:
+    post:
+      security:
+        - {}
+        - key_query: []
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                title: {type: string, example: mine}
+                file: {type: string, format: binary}
+      responses:
+        '200': {description: ok}
+  /login:
+    post:
+      security:
+        - digest: []
+      requestBody:
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              type: object
+              required: [user]
+              properties:
+                user: {type: string}
+                keep: {type: boolean, default: true}
+      responses:
+        '200': {description: ok}
+  /raw:
+    put:
+      security:
+        - oauth: []
+        - basic: []
+      requestBody:
+        content:
+          text/plain:
+            example: hello
+      responses:
+        '200': {description: ok}
+  /bin:
+    put:
+      security:
+        - mutual: []
+      requestBody:
+        content:
+          application/octet-stream: {}
+      responses:
+        '200': {description: ok}
+  /k0:
+    get:
+      responses:
+        '200': {description: ok}
+  /k1:
+    get:
+      security:
+        - key_cookie: []
+      responses:
+        '200': {description: ok}
+  /k2:
+    get:
+      security:
+        - oidc: []
+      responses:
+        '200': {description: ok}
+components:
+  schemas:
+    Pet:
+      type: object
+      properties:
+        name: {type: string, example: Rex}
+        age: {type: integer}
+        owner:
+          $ref: '#/components/schemas/Owner'
+    Owner:
+      type: object
+      properties:
+        pet:
+          $ref: '#/components/schemas/Pet'
+  securitySchemes:
+    bearer: {type: http, scheme: bearer}
+    basic: {type: http, scheme: Basic}
+    digest: {type: http, scheme: digest}
+    key_header: {type: apiKey, in: header, name: X-Api-Key}
+    key_query: {type: apiKey, in: query, name: api_key}
+    key_cookie: {type: apiKey, in: cookie, name: session}
+    oauth:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://example.com/token
+          scopes: {}
+    oidc: {type: openIdConnect, openIdConnectUrl: https://example.com/.well-known}
+    mutual: {type: mutualTLS}
