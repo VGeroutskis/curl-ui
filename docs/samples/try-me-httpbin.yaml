@@ -1,0 +1,75 @@
+openapi: 3.1.0
+info:
+  title: Try me (httpbin)
+  version: 1.0.0
+servers:
+  - url: https://httpbin.org
+    description: httpbin
+tags:
+  - name: Read
+  - name: Send
+paths:
+  /headers:
+    get:
+      tags: [Read]
+      summary: See my headers
+      parameters:
+        - {name: X-Demo, in: header, required: true, example: hello}
+        - {name: X-Optional, in: header, example: switched off}
+  /get:
+    get:
+      tags: [Read]
+      summary: Query parameters
+      parameters:
+        - {name: city, in: query, required: true, example: Athens}
+        - {name: page, in: query, schema: {type: integer, default: 2}}
+  /status/{code}:
+    get:
+      tags: [Read]
+      summary: Pick a status code
+      parameters:
+        - {name: code, in: path, required: true, schema: {type: integer}}
+  /post:
+    post:
+      tags: [Send]
+      summary: Send JSON
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: {type: string, example: Rex}
+                age: {type: integer}
+    put:
+      tags: [Send]
+      summary: Not allowed here
+  /anything/form:
+    post:
+      tags: [Send]
+      summary: Send a form with a file
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [title, file]
+              properties:
+                title: {type: string, example: my upload}
+                file: {type: string, format: binary}
+  /bearer:
+    get:
+      tags: [Sign in]
+      summary: Bearer token
+      security:
+        - token: []
+  /basic-auth/me/secret:
+    get:
+      tags: [Sign in]
+      summary: 'Basic: username me, password secret'
+      security:
+        - basic: []
+components:
+  securitySchemes:
+    token: {type: http, scheme: bearer}
+    basic: {type: http, scheme: basic}
