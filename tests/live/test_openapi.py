@@ -48,6 +48,8 @@ def main():
     threading.Thread(target=server.serve_forever, daemon=True).start()
     base = "http://127.0.0.1:%d" % server.server_address[1]
     fails = 0
+    # --json came in curl 7.82: an older one is told so on the card, and sends nothing
+    has_json = "--json" in subprocess.run(["curl", "--help", "all"], capture_output=True, text=True).stdout
 
     def check(cond, what):
         nonlocal fails
@@ -111,10 +113,13 @@ def main():
             check(got["method"] == "GET" and got["path"] == "/pets?limit=10", "%s: GET with its required query: %s" % (name, got["path"]))
             check(got["headers"].get("authorization") == "Bearer tk" or not full, "%s: bearer token sent" % name)
             check("x-trace" not in got["headers"], "%s: an optional header stays off" % name)
-            got = send(home, ids, "createPet")
-            check(got["method"] == "POST" and b"Rex" in got["body"], "%s: JSON body from the schema: %s" % (name, got["body"][:60]))
-            check(got["headers"].get("content-type") == "application/json", "%s: its type" % name)
-            check(got["headers"].get("authorization", "").startswith("Basic "), "%s: basic" % name)
+            if has_json:
+                got = send(home, ids, "createPet")
+                check(got["method"] == "POST" and b"Rex" in got["body"], "%s: JSON body from the schema: %s" % (name, got["body"][:60]))
+                check(got["headers"].get("content-type") == "application/json", "%s: its type" % name)
+                check(got["headers"].get("authorization", "").startswith("Basic "), "%s: basic" % name)
+            text = app(home, "--open-node", ids["createPet"], "--form", "body")
+            check(field(text, "body_kind") == "json", "%s: the form shows JSON" % name)
             got = send(home, ids, "GET /pets/{petId}")
             check(got["path"] == "/pets/7?verbose=true", "%s: path variable: %s" % (name, got["path"]))
             got = send(home, ids, "POST /login")
@@ -137,8 +142,9 @@ def main():
             if name == "v1.2":
                 got = send(home, ids, "List pets", "--var", "status=open")
                 check(got["path"] == "/pets?limit=10", "1.2: %s" % got["path"])
-                got = send(home, ids, "createPet")
-                check(b"name" in got["body"] and got["method"] == "POST", "1.2: body from the model: %s" % got["body"][:40])
+                if has_json:
+                    got = send(home, ids, "createPet")
+                    check(b"name" in got["body"] and got["method"] == "POST", "1.2: body from the model: %s" % got["body"][:40])
             else:
                 got = send(home, ids, "Get one", "--var", "id=5")
                 check(got["path"] == "/pets.json/5", "%s: %s" % (name, got["path"]))

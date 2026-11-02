@@ -200,7 +200,7 @@ in the report. A name that cannot be a variable has `_` for what it cannot hold.
 | Params, as plain text | Auth |
 |---|---|
 | ![The Params table showing a decoded query next to the encoded URL](docs/screenshots/params.png) | ![The Basic auth form using a variable for the password](docs/screenshots/auth.png) |
-| ![An API description imported as a collection](docs/screenshots/openapi.png) | ![An API description imported as a collection](docs/screenshots/auth.png) |
+| ![An API description imported as a collection](docs/screenshots/openapi.png) | |
 
 | Body | History |
 |---|---|
