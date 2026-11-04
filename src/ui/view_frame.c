@@ -224,8 +224,8 @@ void view_frame(app_t *a)
       const palette *p = &a->pal;
       struct nk_rect bar = nk_rect(center.x, center.y, center.w, 30);
       ui_push_clip(a, bar);
-      ui_rect(a, bar, 0, p->amber_bg);
-      ui_text_fit(a, a->f.small, bar.x + 12, bar.y, bar.h, bar.w - 80, a->notice, p->amber);
+      ui_rect(a, bar, 0, a->notice_info ? p->accent_soft : p->amber_bg);
+      ui_text_fit(a, a->f.small, bar.x + 12, bar.y, bar.h, bar.w - 80, a->notice, a->notice_info ? p->text : p->amber);
       if(ui_button(a, nk_rect(bar.x + bar.w - 66, bar.y + 3, 60, 24), "Dismiss", BTN_GHOST))
         a->notice[0] = '\0';
       center.y += 30;

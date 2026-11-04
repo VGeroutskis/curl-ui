@@ -776,7 +776,7 @@ static void becomes(void)
   /* url_has_baseurl_and_path_vars */
   if(!view(kid(im.c->root, "GET /pets/{petId}"), &v)) {
     CHECK_STR(v.r.url, "{{baseUrl}}/pets/{{petId}}?verbose=true");
-    CHECK_STR(v.method, "GET");
+    CHECK_STR(v.method, "");  /* a GET with no body is what curl does by itself: no -X GET */
     view_free(&v);
   }
   /* params_on_and_off, headers, cookie_param, bearer */
@@ -1379,6 +1379,65 @@ static const struct { const char *name; void (*fn)(void); } g_review[] = {
   { "fifo", review_fifo_ref }, { "outside", review_report_names_outside }, { "alias", review_alias_after_key }, { "emptysecret", review_empty_secret_is_missing },
 };
 
+static void get_needs_no_method(void)
+{
+  imported im;
+  req_view v;
+  memset(&im, 0, sizeof(im));
+  CHECK(!import_text("openapi: 3.0.0\ninfo: {title: T}\npaths:\n  /a:\n    get: {}\n    delete: {}\n"
+                     "  /b:\n    get:\n      requestBody:\n        content:\n          application/json:\n            example: {x: 1}\n"
+                     "  /c:\n    post: {}\n", &im));
+  if(!view(kid(im.c->root, "GET /a"), &v)) {
+    CHECK_STR(v.method, "");
+    view_free(&v);
+  }
+  if(!view(kid(im.c->root, "GET /b"), &v)) {  /* a body would make it a POST */
+    CHECK_STR(v.method, "GET");
+    view_free(&v);
+  }
+  if(!view(kid(im.c->root, "DELETE /a"), &v)) {
+    CHECK_STR(v.method, "DELETE");
+    view_free(&v);
+  }
+  if(!view(kid(im.c->root, "POST /c"), &v)) {
+    CHECK_STR(v.method, "POST");
+    view_free(&v);
+  }
+  imported_free(&im);
+}
+
+static void report_warns(void)
+{
+  oas_report r;
+  str_list l;
+  memset(&r, 0, sizeof(r));
+  r.requests = 3;
+  CHECK(!oas_report_warns(&r));
+  r.webhooks = 1;  /* what is skipped by design, or only explained, is not a warning */
+  r.callbacks = 1;
+  r.load.remote_refs = 1;
+  r.alternatives_dropped = 1;
+  r.oauth = 1;
+  r.xml_bodies = 1;
+  CHECK(!oas_report_warns(&r));
+  r.unsafe = 1;
+  CHECK(oas_report_warns(&r));
+  r.unsafe = 0;
+  r.load.broken_refs = 1;
+  CHECK(oas_report_warns(&r));
+  r.load.broken_refs = 0;
+  r.load.truncated = 1;
+  CHECK(oas_report_warns(&r));
+  r.load.truncated = 0;
+  r.relative_server = (char *)"/rel";
+  CHECK(oas_report_warns(&r));
+  r.relative_server = NULL;
+  l.s = NULL;
+  l.n = 1;
+  r.load.outside = l;
+  CHECK(oas_report_warns(&r));
+}
+
 int main(int argc, char **argv)
 {
   if(argc < 3) {
@@ -1416,6 +1475,8 @@ int main(int argc, char **argv)
   becomes();
   becomes_more();
   damaged_every_64th_byte();
+  get_needs_no_method();
+  report_warns();
   {
     size_t i;
     for(i = 0; i < sizeof(g_review) / sizeof(g_review[0]); i++)

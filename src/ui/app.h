@@ -280,6 +280,7 @@ typedef struct {
   int env_del_armed;
   const void *reveal_tab;  /* the tab the command's eye was last open in */
   char notice[2048];    /* something the user should know, until dismissed */
+  int notice_info;      /* it is news, not a warning */
 
   /* the prompt for missing variables */
   int modal_open;
@@ -409,6 +410,7 @@ int env_menu_item_at(app_t *a, struct nk_vec2 pos);
 void env_menu_pick(app_t *a, int item);
 void env_menu_draw(app_t *a);
 void app_notice(app_t *a, const char *text);
+void app_notice_info(app_t *a, const char *text);  /* the same, for news that needs nothing done */
 
 /* store.c, view_collections.c */
 const char *tab_coll(const tab_t *t);

@@ -473,8 +473,8 @@ static int write_dump(app_t *a, const char *path)
         fprintf(f, "body_row=%s:%s:%d\n", CUR(a)->body_rows.r[k].key, CUR(a)->body_rows.r[k].value, CUR(a)->body_rows.r[k].enabled);
     }
     fprintf(f, "node=%s\ndirty=%d\ntitle=%s\n", CUR(a)->node_id, CUR(a)->dirty, CUR(a)->title);
-    fprintf(f, "env=%s\nvars_for=%s\nshow_vars=%d\nnotice=%s\nmodal=%d\nmodal_missing=", app_tab_env(a, CUR(a))->name, a->vars_for, a->show_vars,
-            a->notice, a->modal_open);
+    fprintf(f, "env=%s\nvars_for=%s\nshow_vars=%d\nnotice=%s\nnotice_kind=%s\nmodal=%d\nmodal_missing=", app_tab_env(a, CUR(a))->name, a->vars_for, a->show_vars,
+            a->notice, a->notice[0] ? (a->notice_info ? "info" : "warn") : "", a->modal_open);
     for(i = 0; i < a->modal_names.n; i++)
       fprintf(f, "%s%s", i ? "," : "", a->modal_names.s[i]);
     fputs("\nmodal_secret=", f);

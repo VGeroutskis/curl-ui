@@ -449,7 +449,7 @@ int app_import_openapi(app_t *a, const char *path, char *err, size_t errn)
   var_store vars, *st;
   oas_report rep;
   char text[2048];
-  int i, rc;
+  int i, rc, warns;
   for(i = 0; taken && i < a->ncolls; i++)
     taken[i] = a->colls[i]->root->name;
   rc = oas_import_file(path, taken, taken ? a->ncolls : 0, &c, &vars, &rep, err, errn);
@@ -474,11 +474,17 @@ int app_import_openapi(app_t *a, const char *path, char *err, size_t errn)
   *st = vars;
   c->root->open = 1;
   oas_report_text(&rep, c->root->name, text, sizeof(text));
+  warns = oas_report_warns(&rep);
   oas_report_free(&rep);
-  if(a->coll_dir[0] && coll_save(c, a->coll_dir))
+  if(a->coll_dir[0] && coll_save(c, a->coll_dir)) {
     snprintf(text + strlen(text), sizeof(text) - strlen(text), " But the collection could not be saved.");
+    warns = 1;
+  }
   app_vars_save(a);
-  app_notice(a, text);
+  if(warns)
+    app_notice(a, text);
+  else
+    app_notice_info(a, text);
   a->sidebar = SIDE_COLLECTIONS;
   a->show_vars = a->show_settings = 0;
   a->pending_unfocus = 1;

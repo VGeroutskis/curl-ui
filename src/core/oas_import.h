@@ -23,6 +23,8 @@ int oas_import_file(const char *path, const char *const *taken_names, int ntaken
                     oas_report *rep, char *err, size_t errn);
 void oas_report_free(oas_report *r);
 void oas_report_text(const oas_report *r, const char *coll_name, char *out, size_t n);
+/* Is there something in it the user should act on? What is skipped by design is not. */
+int oas_report_warns(const oas_report *r);
 /* Does this text say it is one? It may also be a curl command. */
 int oas_looks_like_api(const char *text, size_t len);
 

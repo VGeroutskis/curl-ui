@@ -296,7 +296,8 @@ static jv *build_request(const oas_op *o, var_store *vars, int *unsafe)
       known = 1;
   if(!known)
     add_opt(&r, "request", o->method);
-  out = req_to_jv(&r, known ? o->method : "", &h, NULL);
+  /* curl sends a GET by itself, so -X GET would only be noise; with a body it would send a POST */
+  out = req_to_jv(&r, !known || (!strcmp(o->method, "GET") && o->body == OAS_BODY_NONE) ? "" : o->method, &h, NULL);
 
   kv_free(&params);
   kv_free(&headers);
@@ -512,6 +513,11 @@ void oas_report_text(const oas_report *r, const char *coll_name, char *out, size
     used += (size_t)snprintf(out + used, n - used, " OAuth is not run here: put a token in {{token}}.");
   if(r->xml_bodies && used < n)
     snprintf(out + used, n - used, " XML bodies start empty.");
+}
+
+int oas_report_warns(const oas_report *r)
+{
+  return r->load.outside.n || r->unsafe || r->relative_server || r->load.broken_refs || r->load.truncated;
 }
 
 /* A file that says what it is, even if it cannot be read: the reason is better than a box of text. */

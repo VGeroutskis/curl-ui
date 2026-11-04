@@ -204,6 +204,13 @@ void app_rebuild_args(app_t *a)
 void app_notice(app_t *a, const char *text)
 {
   snprintf(a->notice, sizeof(a->notice), "%s", text);
+  a->notice_info = 0;
+}
+
+void app_notice_info(app_t *a, const char *text)
+{
+  app_notice(a, text);
+  a->notice_info = 1;
 }
 
 void app_add_option(app_t *a, const char *name, const char *value)
